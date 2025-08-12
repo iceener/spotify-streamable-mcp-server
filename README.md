@@ -17,11 +17,11 @@ At first glance, a "Spotify MCP" may seem unnecessary—pressing play or skippin
 
 Example:
 
-![](https://github.com/iceener/spotify-streamable-mcp-server/_spec/heyalice-app.gif)
+![](https://github.com/iceener/spotify-streamable-mcp-server/blob/main/_spec/heyalice-app.gif?raw=true)
 
 Note: This UI ^ is [Alice](https://heyalice.app), a desktop app. That’s one of my projects.
 
-![](https://github.com/iceener/spotify-streamable-mcp-server/_spec/claude-desktop.gif)
+![](https://github.com/iceener/spotify-streamable-mcp-server/blob/main/_spec/claude-desktop.gif?raw=true)
 
 This UI ^ is Claude Desktop.
 
