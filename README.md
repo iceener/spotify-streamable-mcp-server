@@ -498,103 +498,174 @@ Claude Desktop connects to remote MCP servers through a local stdio bridge. Exam
 
 If you enable local HTTPS in front of the server, change the URL to `https://localhost:3030/mcp` and ensure your client trusts the certificate.
 
-### Use cases
+### End-to-end example session
 
-1. Play a specific track on a target device at a given volume
+This walkthrough shows a complete flow using all tools with actionable `_msg` outputs the AI can rely on.
 
-User message:
+#### What's playing?
 
-```text
-Play "Instant Crush" by Daft Punk on Kitchen speaker at 50% volume.
+Narration: I'll check what's currently playing on your Spotify account.
+
+Tool: player_status
+
+Request
+
+```json
+{
+  "include": ["player", "devices", "current_track"]
+}
 ```
 
-Possible server messages:
+Response
 
 ```text
-Successful: transfer, play, volume. Status: Now playing on 'Kitchen speaker'. Volume: 50%
+'Come With Me - Radio Mix' is playing on device 'Adam’s MacBook Pro'. Context: spotify:playlist:2mMPIccnFiOd2xgkO0iABm.
 ```
+
+Assistant: You're currently listening to "Come With Me - Radio Mix" on your MacBook Pro. The track is playing from a playlist. Would you like me to get more details about the current track or help you control playback in any way?
+
+#### Play "Protected" from this playlist
+
+Narration: I'll help you play "Protected" from your current playlist. Let me first get the playlist details to find that specific track.
+
+Tool: spotify_playlist
+
+Request
+
+```json
+{
+  "action": "items",
+  "playlist_id": "2mMPIccnFiOd2xgkO0iABm",
+  "limit": 50
+}
+```
+
+Response
 
 ```text
-No active device. Ask the user to open Spotify on any device and retry, or use transfer to a listed device.
+Loaded 50 items from 'Nora' (context: spotify:playlist:2mMPIccnFiOd2xgkO0iABm).
+- #0 Come with Me - Radio Mix — spotify:track:2FxwTax2LGVybNIrreiwXv
+- #1 Spring Embers — spotify:track:2slr1WHisMcjKMEz0RJ8u2
+- #2 Come With Me - Radio Mix — spotify:track:1Ht4NJdY8adMsW540P5vG0
+- #3 Senses of Comfort — spotify:track:79HByFhZMjYkMGRT5xQiDl
+- #4 Life on Hold — spotify:track:0uTkVCAf8PxMo8NJ3tFYzH
+- #5 Birthright — spotify:track:24KBMWfxD8l3z9JwfgU9oL
+- #6 I Love You Always Forever (Nora's Version) — spotify:track:4eMaX3oR9aD0JTwZOrNQ9Y
+- #7 Protected — spotify:track:1cRRIRrUiPnLOvsnWNhoH9
+- #8 Indulgence — spotify:track:038yuRmrY7Vk8d6c3PDs7Q
+- #9 Aquatic — spotify:track:4PJaGVVVYNSN9EZJmMLtfK
+- #10 Tears In Your Eyes — spotify:track:4xs3eeuZb1WofrjlUp65QP
+- #11 Do No More — spotify:track:21YVPtVHmvpodDiy7GyhUU
+- #12 Sherwood Forest — spotify:track:4PweJp1SbwGcCtUWGUKHbw
+- #13 Train of Thoughts — spotify:track:1OoJQao2C0rvcUpr2BqgaM
+- #14 Hyperreal (Middle of the Night) — spotify:track:1f9H7N9ijHFnV0BqJufUIS
+- #15 Memories — spotify:track:6BiBQjBIl8ozwqRihm4hTV
+- #16 Polar Lights — spotify:track:485Th9A00AaXGv6CJUEtfi
+- #17 In Your Eyes — spotify:track:501sz40LhXSFQHA2LTXMpw
+- #18 In The Air Tonight - Croatia Squad Remix — spotify:track:3CdGMGuadrX7Dyw6Zwn1VR
+- #19 Pretoria — spotify:track:5ViijhC2983J1B8Bo1wbbo
+… and 30 more
 ```
 
-2. Queue a song next
+Assistant: Perfect! I found "Protected" at position #7 in your playlist. Now I'll play it for you.
 
-User message:
+Tool: spotify_control
+
+Request
+
+```json
+{
+  "operations": [
+    {
+      "action": "play",
+      "context_uri": "spotify:playlist:2mMPIccnFiOd2xgkO0iABm",
+      "offset": { "position": 7 }
+    }
+  ]
+}
+```
+
+Response
 
 ```text
-Queue "Get Lucky" next.
+Successful: play. Status: Now playing on 'Adam’s MacBook Pro'. Current track: 'Protected'. Context verified: spotify:playlist:2mMPIccnFiOd2xgkO0iABm
 ```
 
-Possible server message:
+Assistant: Great! I've started playing "Protected" from your "Nora" playlist on your MacBook Pro. The track should be playing now!
+
+#### Add current track to favorites
+
+Narration: I'll add "Protected" to your saved tracks (favorites) right away!
+
+Tool: spotify_library
+
+Request
+
+```json
+{
+  "action": "tracks_add",
+  "ids": ["1cRRIRrUiPnLOvsnWNhoH9"]
+}
+```
+
+Response
 
 ```text
-Successful: queue. Status: Unable to confirm playback immediately.
+Saved 1 track:
+- Protected — spotify:track:1cRRIRrUiPnLOvsnWNhoH9
 ```
 
-3. Resume playback on another device
+Assistant: Perfect! I've added "Protected" to your saved tracks. It's now in your Liked Songs. Great choice!
 
-User message:
+#### Switch to "Train of Thoughts"
+
+Narration: I'll play "Train of Thoughts" from your Nora playlist for you!
+
+Tool: spotify_control
+
+Request
+
+```json
+{
+  "operations": [
+    {
+      "action": "play",
+      "context_uri": "spotify:playlist:2mMPIccnFiOd2xgkO0iABm",
+      "offset": { "position": 13 }
+    }
+  ]
+}
+```
+
+Response
 
 ```text
-Resume playback on John's iPhone.
+Successful: play. Status: Now playing on 'Adam’s MacBook Pro'. Current track: 'Train of Thoughts'. Context verified: spotify:playlist:2mMPIccnFiOd2xgkO0iABm
 ```
 
-Possible server message:
+Assistant: Done! "Train of Thoughts" is now playing on your MacBook Pro. I can see from the playlist that this is position #13 in your "Nora" playlist.
+
+#### Turn the volume up to 100%
+
+Narration: I'll turn the volume up to 100% for you!
+
+Tool: spotify_control
+
+Request
+
+```json
+{
+  "operations": [{ "action": "volume", "volume_percent": 100 }]
+}
+```
+
+Response
 
 ```text
-Successful: transfer, play. Status: Now playing on 'John's iPhone'.
+Successful: volume. Status: Now playing on 'Adam’s MacBook Pro'. Current track: 'Train of Thoughts'. Volume: 100%
 ```
 
-4. Create a playlist and add tracks
-
-User message:
-
-```text
-Create a playlist called "Focus" and add 10 upbeat Daft Punk tracks.
-```
-
-Possible server messages (sequence):
-
-```text
-Created playlist 'Focus'.
-```
-
-```text
-I've added 10 items to 'Focus': Instant Crush, Get Lucky, Lose Yourself to Dance, …
-```
-
-5. What’s playing right now?
-
-User message:
-
-```text
-What's playing?
-```
-
-Possible server messages:
-
-```text
-Now playing on 'Kitchen speaker'. Current track: 'Instant Crush'.
-```
-
-```text
-No active playback. Last track was 'Instant Crush'. You can transfer to an available device and play.
-```
-
-6. Check if tracks are saved
-
-User message:
-
-```text
-Am I already saving "Instant Crush" and "Get Lucky"?
-```
-
-Possible server message:
-
-```text
-Already saved: 1/2.
-```
+Assistant: Perfect! I've cranked the volume up to 100% on your MacBook Pro. "Train of Thoughts" should now be playing at full volume.
 
 ### Troubleshooting
 
