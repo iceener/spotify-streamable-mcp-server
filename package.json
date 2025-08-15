@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun --hot src/index.ts",
+    "dev:auth": "PORT=3030 AUTH_ENABLED=true bun --hot src/index.ts",
     "prestart": "bun run build",
     "start": "bun run dist/index.js",
     "build": "bun build src/index.ts --outdir dist --target bun",
@@ -36,7 +37,8 @@
     "fetch-to-node": "^2.1.0",
     "hono": "^4.8.12",
     "itty-router": "^4.0.23",
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
+    "zod-to-json-schema": "^3.23.5"
   },
   "devDependencies": {
     "bun-types": "latest",

@@ -1,10 +1,44 @@
-name = "mcp-server-template-worker"
+name = "spotify-mcp-worker"
 main = "src/worker.ts"
 compatibility_date = "2025-06-18"
 workers_dev = true
+compatibility_flags = ["nodejs_compat"]
 
 [vars]
+# MCP protocol
 MCP_PROTOCOL_VERSION = "2025-06-18"
+
+# Auth flags (RS-only parity with linear)
 AUTH_ENABLED = "true"
+AUTH_REQUIRE_RS = "true"
+# Worker accepts either AUTH_ALLOW_DIRECT_BEARER or AUTH_ALLOW_LINEAR_BEARER; keep this one:
+AUTH_ALLOW_DIRECT_BEARER = "false"
 
+# OAuth (Spotify)
+SPOTIFY_ACCOUNTS_URL = "https://accounts.spotify.com"
+OAUTH_AUTHORIZATION_URL = "https://accounts.spotify.com/authorize"
+OAUTH_TOKEN_URL = "https://accounts.spotify.com/api/token"
+# Choose scopes as needed
+OAUTH_SCOPES = "playlist-read-private playlist-read-collaborative playlist-modify-public playlist-modify-private user-read-playback-state user-modify-playback-state user-read-currently-playing user-library-read user-library-modify"
 
+# Redirect allowlist (final redirect back to the client)
+# In dev, you can temporarily set OAUTH_REDIRECT_ALLOW_ALL="true"
+OAUTH_REDIRECT_ALLOW_ALL = "false"
+OAUTH_REDIRECT_ALLOWLIST = "alice://oauth/callback,https://claude.ai/api/mcp/auth_callback,https://claude.com/api/mcp/auth_callback,https://spotify-mcp-worker.adam-996.workers.dev/spotify/callback"
+OAUTH_REDIRECT_URI = "alice://oauth/callback"
+
+# PKCE
+OAUTH_PKCE_SKIP_VERIFY = "false"
+
+# Environment
+NODE_ENV = "development"
+
+# DO NOT store secrets in [vars]; set via `wrangler secret put`
+# SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET must be provided as secrets:
+# wrangler secret put SPOTIFY_CLIENT_ID
+# wrangler secret put SPOTIFY_CLIENT_SECRET
+
+[[kv_namespaces]]
+binding = "TOKENS"
+# Replace with your real KV namespace id
+id = "15814a9d6d2c4f95b8be737a0e550d37"

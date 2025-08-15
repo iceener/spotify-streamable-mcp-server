@@ -498,9 +498,52 @@ Claude Desktop connects to remote MCP servers through a local stdio bridge. Exam
 
 If you enable local HTTPS in front of the server, change the URL to `https://localhost:3030/mcp` and ensure your client trusts the certificate.
 
-### Cloudflare Worker (remote MCP)
+### Cloudflare Worker (remote MCP) — Linear‑parity OAuth/RS flow
 
-This repo also includes a minimal, dev‑only Cloudflare Worker implementation of a Streamable HTTP MCP server at `src/worker.ts`. It’s useful for testing remote MCP transport locally or on Workers. It is not the full Spotify server (tools are limited to `health`), but it does read the same `serverMetadata` (title/instructions).
+The Worker at `src/worker.ts` implements Streamable HTTP with the same OAuth 2.1 Resource Server flow as the Linear Worker:
+
+- 401 challenge parity on `POST /mcp` with `WWW-Authenticate` and `Mcp-Session-Id`
+- RS bearer → upstream bearer mapping (Authorization header rewrite + request context)
+- `/.well-known/oauth-authorization-server` and `/.well-known/oauth-protected-resource`
+- `GET /authorize` (PKCE S256), `GET /spotify/callback`, `POST /token` (`authorization_code` + `refresh_token`)
+- `resources/list` and `prompts/list` return empty arrays (capability parity)
+- `GET /mcp` returns 405 (no SSE streaming by default)
+
+Required configuration (`wrangler.toml`):
+
+```toml
+name = "spotify-mcp-worker"
+main = "src/worker.ts"
+compatibility_date = "2025-06-18"
+workers_dev = true
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+MCP_PROTOCOL_VERSION = "2025-06-18"
+AUTH_ENABLED = "true"
+AUTH_REQUIRE_RS = "true"
+AUTH_ALLOW_DIRECT_BEARER = "false"
+SPOTIFY_ACCOUNTS_URL = "https://accounts.spotify.com"
+OAUTH_AUTHORIZATION_URL = "https://accounts.spotify.com/authorize"
+OAUTH_TOKEN_URL = "https://accounts.spotify.com/api/token"
+OAUTH_SCOPES = "playlist-read-private playlist-read-collaborative playlist-modify-public playlist-modify-private user-read-playback-state user-modify-playback-state user-read-currently-playing user-library-read user-library-modify"
+OAUTH_REDIRECT_ALLOW_ALL = "false" # set "true" only in dev
+OAUTH_REDIRECT_ALLOWLIST = "alice://oauth/callback,https://claude.ai/api/mcp/auth_callback,https://claude.com/api/mcp/auth_callback"
+OAUTH_REDIRECT_URI = "alice://oauth/callback"
+OAUTH_PKCE_SKIP_VERIFY = "false"
+NODE_ENV = "development"
+
+[[kv_namespaces]]
+binding = "TOKENS"
+id = "<YOUR_KV_NAMESPACE_ID>"
+```
+
+Secrets (do not put these in `[vars]`):
+
+```bash
+bunx wrangler secret put SPOTIFY_CLIENT_ID
+bunx wrangler secret put SPOTIFY_CLIENT_SECRET
+```
 
 Quick start (local):
 
@@ -510,100 +553,39 @@ bun x wrangler dev --local --port 8787
 # Ready on http://localhost:8787
 ```
 
-Endpoints (Worker):
-
-- `POST /mcp` — JSON‑RPC 2.0 over Streamable HTTP (stateless by default)
-- `GET /mcp` — 405 (minimal server doesn’t stream by default)
-- `GET /health` — health probe → `{ status: "ok" }`
-- `GET /.well-known/oauth-authorization-server` — AS metadata (dev)
-- `GET /.well-known/oauth-protected-resource` — RS metadata (when `AUTH_ENABLED=true` in `wrangler.toml`)
-
-Configuration:
-
-- `wrangler.toml` sets Worker name, main module, and `[vars]`:
-
-```toml
-[vars]
-MCP_PROTOCOL_VERSION = "2025-06-18"
-AUTH_ENABLED = "true"
-```
-
-- The Worker reads `serverMetadata.title/instructions` from `src/config/metadata.ts`.
-- Protocol version can be overridden by `MCP_PROTOCOL_VERSION` (see `[vars]`).
-
-Quick test:
+Discovery check:
 
 ```bash
-curl -s http://127.0.0.1:8787/health
-curl -s -X POST http://127.0.0.1:8787/mcp \
+curl -s http://127.0.0.1:8787/.well-known/oauth-protected-resource
+curl -s http://127.0.0.1:8787/.well-known/oauth-authorization-server
+```
+
+PKCE OAuth flow (manual test):
+
+```bash
+VERIFIER=$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=')
+CHALLENGE=$(printf "%s" "$VERIFIER" | openssl dgst -sha256 -binary | openssl base64 | tr '+/' '-_' | tr -d '=')
+
+# Start authorization (redirects to your allowlisted redirect URI with ?code=...)
+curl -i "http://127.0.0.1:8787/authorize?response_type=code&client_id=mcp-client&state=abc123&code_challenge=$CHALLENGE&code_challenge_method=S256&redirect_uri=$(python3 - <<'PY'\nimport urllib.parse\nprint(urllib.parse.quote('alice://oauth/callback'))\nPY)"
+
+# After you obtain the code, exchange it:
+curl -s -X POST http://127.0.0.1:8787/token \
+  -H 'content-type: application/x-www-form-urlencoded' \
+  --data "grant_type=authorization_code&code=THE_CODE&code_verifier=$VERIFIER"
+
+# Call MCP with RS access token (Worker rewrites to Spotify bearer when mapped):
+curl -i -X POST http://127.0.0.1:8787/mcp \
   -H 'content-type: application/json' \
-  -d '{"jsonrpc":"2.0","id":"1","method":"initialize","params":{"protocolVersion":"2025-06-18"}}'
+  -H "authorization: Bearer RS_ACCESS" \
+  --data '{"jsonrpc":"2.0","id":1,"method":"initialize"}'
 ```
 
-Connect a client to the Worker (inspector):
+Troubleshooting:
 
-```bash
-npx @modelcontextprotocol/inspector
-# In browser: connect to http://127.0.0.1:8787/mcp
-```
-
-Or via mcp‑remote from Claude Desktop/Cursor (example):
-
-```json
-{
-  "mcpServers": {
-    "spotify-worker": {
-      "command": "bunx",
-      "args": [
-        "mcp-remote",
-        "http://127.0.0.1:8787/mcp",
-        "--transport",
-        "http-only"
-      ],
-      "env": { "NO_PROXY": "127.0.0.1,localhost" }
-    }
-  }
-}
-```
-
-Deploy to Cloudflare:
-
-```bash
-bunx wrangler deploy
-```
-
-Remote URL schema (Cloudflare):
-
-- workers.dev: `https://<worker-name>.<account>.workers.dev/mcp`
-- custom domain (if routed to Worker): `https://your.domain.tld/mcp`
-
-Use this URL in clients:
-
-```bash
-# Inspector
-npx @modelcontextprotocol/inspector
-# connect to: https://<worker-name>.<account>.workers.dev/mcp
-
-# Claude/Cursor via mcp-remote
-{
-  "mcpServers": {
-    "spotify-worker": {
-      "command": "bunx",
-      "args": [
-        "mcp-remote",
-        "https://<worker-name>.<account>.workers.dev/mcp",
-        "--transport",
-        "http-only"
-      ]
-    }
-  }
-}
-```
-
-Notes:
-
-- The Worker variant is intentionally minimal; it does not run the full Spotify tools. Use the Node server for Spotify flows, or port the Spotify tools to Workers using fetch and appropriate auth storage.
-- For remote MCP with authentication and stricter semantics, see Cloudflare’s docs on “Build a Remote MCP server” and consider `workers-oauth-provider` or your own provider.
+- `invalid_grant`: PKCE mismatch or missing `/spotify/callback` step; ensure the client-followed redirect is allowlisted and you posted the same `code_verifier`.
+- 401 on `POST /mcp`: RS token not recognized (no mapping); complete OAuth again. In dev you can temporarily set `OAUTH_REDIRECT_ALLOW_ALL="true"`.
+- Tail logs: `bunx wrangler tail --format=pretty`.
 
 ### End-to-end example session
 

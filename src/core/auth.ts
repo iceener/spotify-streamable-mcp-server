@@ -1,10 +1,18 @@
 import { config } from "../config/env.ts";
 import { SpotifyTokenResponseCodec } from "../types/spotify.codecs.ts";
 import { logger } from "../utils/logger.ts";
-import { getCurrentSessionId } from "./context.ts";
+import {
+  getCurrentSessionId,
+  getCurrentSpotifyAccessToken,
+} from "./context.ts";
 import { getSession } from "./session.ts";
 
 export async function getUserBearer(): Promise<string | null> {
+  // Linear-style: prefer per-request token passed via context from the Worker
+  const fromContext = getCurrentSpotifyAccessToken();
+  if (fromContext && fromContext.trim()) {
+    return fromContext;
+  }
   const sessionId = getCurrentSessionId();
   if (!sessionId) return null;
   const session = getSession(sessionId);

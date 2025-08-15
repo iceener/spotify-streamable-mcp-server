@@ -30,6 +30,16 @@ const EnvSchema = z
       .string()
       .default("false")
       .transform((v) => v.toLowerCase() === "true"),
+    // RS-only mode: only accept RS-minted bearer tokens at the resource server.
+    AUTH_REQUIRE_RS: z
+      .string()
+      .default("false")
+      .transform((v) => v.toLowerCase() === "true"),
+    // When RS-only is enabled, optionally allow falling back to a provider access token in Authorization: Bearer
+    AUTH_ALLOW_DIRECT_BEARER: z
+      .string()
+      .default("false")
+      .transform((v) => v.toLowerCase() === "true"),
     AUTH_RESOURCE_URI: OptionalUrl,
     AUTH_DISCOVERY_URL: OptionalUrl,
     OAUTH_CLIENT_ID: z.string().optional(),
@@ -41,6 +51,11 @@ const EnvSchema = z
     OAUTH_REDIRECT_URI: z.string().default("alice://oauth/callback"),
     // Comma-separated allowlist of exact redirect URIs permitted for final AS → client redirect
     OAUTH_REDIRECT_ALLOWLIST: z.string().default(""),
+    // Dev helper to accept any client redirect. Do NOT enable in production.
+    OAUTH_REDIRECT_ALLOW_ALL: z
+      .string()
+      .default("false")
+      .transform((v) => v.toLowerCase() === "true"),
 
     SPOTIFY_CLIENT_ID: z.string().optional(),
     SPOTIFY_CLIENT_SECRET: z.string().optional(),
@@ -66,13 +81,17 @@ const EnvSchema = z
   })
   .passthrough();
 
-export type Config = z.infer<typeof EnvSchema>;
+export type Config = z.infer<typeof EnvSchema> & {
+  AUTH_ALLOW_DIRECT_BEARER: boolean;
+};
 
 function loadConfig(): Config {
   const parsed = EnvSchema.parse(process.env);
+  // provider-agnostic flag only
+  const allowDirect = parsed.AUTH_ALLOW_DIRECT_BEARER;
   // When AUTH_ENABLED=true, AUTH_RESOURCE_URI and AUTH_DISCOVERY_URL are optional.
   // They can be inferred from the incoming request URL and PORT+1 for local dev.
-  return Object.freeze(parsed);
+  return Object.freeze({ ...parsed, AUTH_ALLOW_DIRECT_BEARER: allowDirect });
 }
 
 export const config = loadConfig();
