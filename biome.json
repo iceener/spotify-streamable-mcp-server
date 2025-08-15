@@ -7,13 +7,7 @@
     "lineWidth": 88
   },
   "files": {
-    "includes": [
-      "src/**",
-      "README.md",
-      "package.json",
-      "biome.json",
-      "tsconfig.json"
-    ]
+    "includes": ["src/**", "README.md", "package.json", "biome.json", "tsconfig.json"]
   },
   "linter": {
     "enabled": true,
@@ -37,18 +31,7 @@
       }
     }
   },
-  "overrides": [
-    {
-      "includes": ["src/core/http.ts"],
-      "linter": {
-        "rules": {
-          "suspicious": {
-            "noExplicitAny": "off"
-          }
-        }
-      }
-    }
-  ],
+  "overrides": [],
   "javascript": {
     "formatter": {
       "semicolons": "always",

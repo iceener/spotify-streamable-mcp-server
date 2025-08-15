@@ -1,7 +1,7 @@
-import { randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
-import { config } from '../config/env.js';
+import { randomBytes } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
+import { config } from "../config/env.ts";
 
 export type SpotifyUserTokens = {
   access_token: string;
@@ -14,21 +14,18 @@ export type RsTokenRecord = {
   rs_access_token: string;
   rs_refresh_token: string;
   created_at: number; // epoch ms
-  // Latest Spotify tokens for this subject
   spotify: SpotifyUserTokens;
 };
 
-// In-memory stores
 const rsAccessToRecord = new Map<string, RsTokenRecord>();
 const rsRefreshToRecord = new Map<string, RsTokenRecord>();
 
-// Strong 256-bit opaque token
 export function generateOpaqueToken(bytes: number = 32): string {
   return randomBytes(bytes)
-    .toString('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/g, '');
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
 }
 
 function persistPath(): string | null {
@@ -46,18 +43,12 @@ type PersistShape = {
 
 function loadPersisted(): void {
   const p = persistPath();
-  if (!p) {
-    return;
-  }
+  if (!p) return;
   try {
-    if (!existsSync(p)) {
-      return;
-    }
-    const raw = readFileSync(p, 'utf8');
+    if (!existsSync(p)) return;
+    const raw = readFileSync(p, "utf8");
     const data = JSON.parse(raw) as PersistShape;
-    if (!data || !Array.isArray(data.records)) {
-      return;
-    }
+    if (!data || !Array.isArray(data.records)) return;
     for (const rec of data.records) {
       const record: RsTokenRecord = {
         rs_access_token: rec.rs_access_token,
@@ -68,16 +59,12 @@ function loadPersisted(): void {
       rsAccessToRecord.set(record.rs_access_token, record);
       rsRefreshToRecord.set(record.rs_refresh_token, record);
     }
-  } catch {
-    // ignore
-  }
+  } catch {}
 }
 
 function savePersisted(): void {
   const p = persistPath();
-  if (!p) {
-    return;
-  }
+  if (!p) return;
   try {
     const dir = dirname(p);
     if (!existsSync(dir)) {
@@ -90,10 +77,8 @@ function savePersisted(): void {
       spotify: r.spotify,
     }));
     const obj: PersistShape = { records };
-    writeFileSync(p, JSON.stringify(obj, null, 2), 'utf8');
-  } catch {
-    // ignore
-  }
+    writeFileSync(p, JSON.stringify(obj, null, 2), "utf8");
+  } catch {}
 }
 
 loadPersisted();
@@ -101,13 +86,11 @@ loadPersisted();
 export function storeRsTokenMapping(
   rsAccessToken: string,
   spotifyTokens: SpotifyUserTokens,
-  rsRefreshToken?: string,
+  rsRefreshToken?: string
 ): RsTokenRecord {
-  // If we are rotating only the access token for an existing RS refresh token, reuse that record
   if (rsRefreshToken) {
     const existing = rsRefreshToRecord.get(rsRefreshToken);
     if (existing) {
-      // Remove old access mapping
       rsAccessToRecord.delete(existing.rs_access_token);
       existing.rs_access_token = rsAccessToken;
       existing.spotify = { ...spotifyTokens };
@@ -116,7 +99,6 @@ export function storeRsTokenMapping(
       return existing;
     }
   }
-  // Create new record with its own RS refresh token if not provided
   const record: RsTokenRecord = {
     rs_access_token: rsAccessToken,
     rs_refresh_token: rsRefreshToken ?? generateOpaqueToken(),
@@ -129,39 +111,28 @@ export function storeRsTokenMapping(
   return record;
 }
 
-export function getSpotifyTokensByRsToken(rsToken?: string): SpotifyUserTokens | null {
-  if (!rsToken) {
-    return null;
-  }
+export function getSpotifyTokensByRsToken(
+  rsToken?: string
+): SpotifyUserTokens | null {
+  if (!rsToken) return null;
   const rec = rsAccessToRecord.get(rsToken);
   return rec ? rec.spotify : null;
 }
 
-function _getRecordByRsAccessToken(rsToken?: string): RsTokenRecord | null {
-  if (!rsToken) {
-    return null;
-  }
-  return rsAccessToRecord.get(rsToken) ?? null;
-}
-
 export function getRecordByRsRefreshToken(
-  rsRefreshToken?: string,
+  rsRefreshToken?: string
 ): RsTokenRecord | null {
-  if (!rsRefreshToken) {
-    return null;
-  }
+  if (!rsRefreshToken) return null;
   return rsRefreshToRecord.get(rsRefreshToken) ?? null;
 }
 
 export function updateSpotifyTokensByRsRefreshToken(
   rsRefreshToken: string,
   newSpotify: SpotifyUserTokens,
-  maybeNewRsAccessToken?: string,
+  maybeNewRsAccessToken?: string
 ): RsTokenRecord | null {
   const rec = rsRefreshToRecord.get(rsRefreshToken);
-  if (!rec) {
-    return null;
-  }
+  if (!rec) return null;
   if (maybeNewRsAccessToken) {
     rsAccessToRecord.delete(rec.rs_access_token);
     rec.rs_access_token = maybeNewRsAccessToken;

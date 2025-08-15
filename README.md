@@ -498,6 +498,113 @@ Claude Desktop connects to remote MCP servers through a local stdio bridge. Exam
 
 If you enable local HTTPS in front of the server, change the URL to `https://localhost:3030/mcp` and ensure your client trusts the certificate.
 
+### Cloudflare Worker (remote MCP)
+
+This repo also includes a minimal, dev‑only Cloudflare Worker implementation of a Streamable HTTP MCP server at `src/worker.ts`. It’s useful for testing remote MCP transport locally or on Workers. It is not the full Spotify server (tools are limited to `health`), but it does read the same `serverMetadata` (title/instructions).
+
+Quick start (local):
+
+```bash
+cd spotify
+bun x wrangler dev --local --port 8787
+# Ready on http://localhost:8787
+```
+
+Endpoints (Worker):
+
+- `POST /mcp` — JSON‑RPC 2.0 over Streamable HTTP (stateless by default)
+- `GET /mcp` — 405 (minimal server doesn’t stream by default)
+- `GET /health` — health probe → `{ status: "ok" }`
+- `GET /.well-known/oauth-authorization-server` — AS metadata (dev)
+- `GET /.well-known/oauth-protected-resource` — RS metadata (when `AUTH_ENABLED=true` in `wrangler.toml`)
+
+Configuration:
+
+- `wrangler.toml` sets Worker name, main module, and `[vars]`:
+
+```toml
+[vars]
+MCP_PROTOCOL_VERSION = "2025-06-18"
+AUTH_ENABLED = "true"
+```
+
+- The Worker reads `serverMetadata.title/instructions` from `src/config/metadata.ts`.
+- Protocol version can be overridden by `MCP_PROTOCOL_VERSION` (see `[vars]`).
+
+Quick test:
+
+```bash
+curl -s http://127.0.0.1:8787/health
+curl -s -X POST http://127.0.0.1:8787/mcp \
+  -H 'content-type: application/json' \
+  -d '{"jsonrpc":"2.0","id":"1","method":"initialize","params":{"protocolVersion":"2025-06-18"}}'
+```
+
+Connect a client to the Worker (inspector):
+
+```bash
+npx @modelcontextprotocol/inspector
+# In browser: connect to http://127.0.0.1:8787/mcp
+```
+
+Or via mcp‑remote from Claude Desktop/Cursor (example):
+
+```json
+{
+  "mcpServers": {
+    "spotify-worker": {
+      "command": "bunx",
+      "args": [
+        "mcp-remote",
+        "http://127.0.0.1:8787/mcp",
+        "--transport",
+        "http-only"
+      ],
+      "env": { "NO_PROXY": "127.0.0.1,localhost" }
+    }
+  }
+}
+```
+
+Deploy to Cloudflare:
+
+```bash
+bunx wrangler deploy
+```
+
+Remote URL schema (Cloudflare):
+
+- workers.dev: `https://<worker-name>.<account>.workers.dev/mcp`
+- custom domain (if routed to Worker): `https://your.domain.tld/mcp`
+
+Use this URL in clients:
+
+```bash
+# Inspector
+npx @modelcontextprotocol/inspector
+# connect to: https://<worker-name>.<account>.workers.dev/mcp
+
+# Claude/Cursor via mcp-remote
+{
+  "mcpServers": {
+    "spotify-worker": {
+      "command": "bunx",
+      "args": [
+        "mcp-remote",
+        "https://<worker-name>.<account>.workers.dev/mcp",
+        "--transport",
+        "http-only"
+      ]
+    }
+  }
+}
+```
+
+Notes:
+
+- The Worker variant is intentionally minimal; it does not run the full Spotify tools. Use the Node server for Spotify flows, or port the Spotify tools to Workers using fetch and appropriate auth storage.
+- For remote MCP with authentication and stricter semantics, see Cloudflare’s docs on “Build a Remote MCP server” and consider `workers-oauth-provider` or your own provider.
+
 ### End-to-end example session
 
 This walkthrough shows a complete flow using all tools with actionable `_msg` outputs the AI can rely on.

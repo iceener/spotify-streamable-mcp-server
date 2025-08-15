@@ -1,0 +1,10 @@
+name = "mcp-server-template-worker"
+main = "src/worker.ts"
+compatibility_date = "2025-06-18"
+workers_dev = true
+
+[vars]
+MCP_PROTOCOL_VERSION = "2025-06-18"
+AUTH_ENABLED = "true"
+
+

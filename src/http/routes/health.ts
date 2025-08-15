@@ -8,10 +8,7 @@ export function healthRoutes() {
       status: 'ok',
       timestamp: new Date().toISOString(),
       transport: 'streamable-http',
-      endpoints: {
-        mcp: '/mcp',
-        health: '/health',
-      },
+      endpoints: { mcp: '/mcp', health: '/health' },
     });
   });
   return app;

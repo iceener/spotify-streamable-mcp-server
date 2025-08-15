@@ -1,29 +1,29 @@
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { config } from '../config/env.js';
-import { toolsMetadata } from '../config/metadata.js';
-import { getUserBearer } from '../core/auth.js';
-import { getCurrentSessionId } from '../core/context.js';
-import { createHttpClient } from '../core/http-client.js';
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { config } from "../config/env.ts";
+import { toolsMetadata } from "../config/metadata.ts";
+import { getUserBearer } from "../core/auth.ts";
+import { getCurrentSessionId } from "../core/context.ts";
+import { createHttpClient } from "../services/http-client.ts";
 import {
   type SpotifyStatusInput,
   SpotifyStatusInputSchema,
-} from '../schemas/inputs.js';
-import { SpotifyStatusOutput } from '../schemas/outputs.js';
+} from "../schemas/inputs.ts";
+import { SpotifyStatusOutput } from "../schemas/outputs.ts";
 import {
   getCurrentlyPlaying,
   getPlayerState,
   getQueue,
   listDevices,
-} from '../services/spotify/player.js';
-import type { ErrorCode } from '../utils/http-result.js';
-import { logger } from '../utils/logger.js';
-import { apiBase } from '../utils/spotify.js';
-import { validateDev } from '../utils/validate.js';
+} from "../services/spotify/player.ts";
+import type { ErrorCode } from "../utils/http-result.ts";
+import { logger } from "../utils/logger.ts";
+import { apiBase } from "../utils/spotify.ts";
+import { validateDev } from "../utils/validate.ts";
 
 const http = createHttpClient({
   baseHeaders: {
-    'Content-Type': 'application/json',
-    'User-Agent': `mcp-spotify/${config.MCP_VERSION}`,
+    "Content-Type": "application/json",
+    "User-Agent": `mcp-spotify/${config.MCP_VERSION}`,
   },
   rateLimit: { rps: 5, burst: 10 },
   timeout: 15000,
@@ -31,112 +31,77 @@ const http = createHttpClient({
 });
 
 export const spotifyStatusTool = {
-  name: 'player_status',
+  name: "player_status",
   title: toolsMetadata.player_status.title,
   description: toolsMetadata.player_status.description,
   inputSchema: SpotifyStatusInputSchema.shape,
 
   handler: async (
     args: SpotifyStatusInput,
-    signal?: AbortSignal,
+    signal?: AbortSignal
   ): Promise<CallToolResult> => {
     try {
-      // Input validation at boundary
       const parsed = SpotifyStatusInputSchema.parse(args);
 
-      // Auth check
       const token = await getUserBearer();
-
       if (!token) {
         const sessionId = getCurrentSessionId();
-        logger.info('spotify_status', {
-          message: 'Missing user token',
+        logger.info("spotify_status", {
+          message: "Missing user token",
           sessionId,
         });
-
-        return errorResult('Missing user token. Please authenticate.', 'unauthorized');
+        return errorResult(
+          "Missing user token. Please authenticate.",
+          "unauthorized"
+        );
       }
 
       const wantedData = new Set(
-        parsed.include ?? ['player', 'devices', 'current_track'],
+        parsed.include ?? ["player", "devices", "current_track"]
       );
-
       const headers = { Authorization: `Bearer ${token}` };
       const base = apiBase(config.SPOTIFY_API_URL);
 
       const requests: Array<Promise<unknown>> = [];
       const requestKeys: string[] = [];
 
-      // Build parallel requests based on what data is wanted
-      if (wantedData.has('player')) {
-        requestKeys.push('player');
-        requests.push(
-          (async () => {
-            return getPlayerState(http, base, headers, signal);
-          })(),
-        );
+      if (wantedData.has("player")) {
+        requestKeys.push("player");
+        requests.push(getPlayerState(http, base, headers, signal));
+      }
+      if (wantedData.has("devices")) {
+        requestKeys.push("devices");
+        requests.push(listDevices(http, base, headers, signal));
+      }
+      if (wantedData.has("queue")) {
+        requestKeys.push("queue");
+        requests.push(getQueue(http, base, headers, signal));
+      }
+      if (wantedData.has("current_track")) {
+        requestKeys.push("current_track");
+        requests.push(getCurrentlyPlaying(http, base, headers, signal));
+      }
+      if (wantedData.has("current_track") && !requestKeys.includes("player")) {
+        requestKeys.push("player");
+        requests.push(getPlayerState(http, base, headers, signal));
       }
 
-      if (wantedData.has('devices')) {
-        requestKeys.push('devices');
-        requests.push(
-          (async () => {
-            return listDevices(http, base, headers, signal);
-          })(),
-        );
-      }
-
-      if (wantedData.has('queue')) {
-        requestKeys.push('queue');
-        requests.push(
-          (async () => {
-            return getQueue(http, base, headers, signal);
-          })(),
-        );
-      }
-
-      if (wantedData.has('current_track')) {
-        requestKeys.push('current_track');
-        requests.push(
-          (async () => {
-            return getCurrentlyPlaying(http, base, headers, signal);
-          })(),
-        );
-      }
-
-      // Ensure playback status is always available when asking for current_track
-      // If the caller did not request 'player' but requested 'current_track',
-      // add a lightweight player state request to derive is_playing/device.
-      if (wantedData.has('current_track') && !requestKeys.includes('player')) {
-        requestKeys.push('player');
-        requests.push(
-          (async () => {
-            return getPlayerState(http, base, headers, signal);
-          })(),
-        );
-      }
-
-      // Execute all requests in parallel
       const results = await Promise.all(requests);
 
-      // Build output object
       const output: Partial<SpotifyStatusOutput> = {};
-
       for (let index = 0; index < requestKeys.length; index++) {
         const key = requestKeys[index];
         const value = results[index];
-
-        if (key === 'player' && value && typeof value === 'object') {
+        if (key === "player" && value && typeof value === "object") {
           const playerValue = value as {
             is_playing?: boolean;
             shuffle_state?: boolean;
-            repeat_state?: 'off' | 'track' | 'context';
+            repeat_state?: "off" | "track" | "context";
             progress_ms?: number;
             timestamp?: number;
             device?: { id?: string };
             context?: { uri?: string };
           };
-
           output.player = {
             is_playing: !!playerValue.is_playing,
             shuffle_state: playerValue.shuffle_state,
@@ -147,8 +112,7 @@ export const spotifyStatusTool = {
             context_uri: playerValue.context?.uri ?? null,
           };
         }
-
-        if (key === 'devices' && value) {
+        if (key === "devices" && value) {
           const devicesValue = value as {
             devices?: Array<{
               id?: string | null;
@@ -158,40 +122,35 @@ export const spotifyStatusTool = {
               volume_percent?: number | null;
             }>;
           };
-
           const devicesList = Array.isArray(devicesValue?.devices)
             ? devicesValue.devices.map((device) => ({
                 id: device.id ?? null,
-                name: String(device.name ?? ''),
-                type: String(device.type ?? ''),
+                name: String(device.name ?? ""),
+                type: String(device.type ?? ""),
                 is_active: !!device.is_active,
                 volume_percent: device.volume_percent ?? null,
               }))
             : [];
-
           output.devices = devicesList;
           output.devicesById = Object.fromEntries(
-            devicesList
-              .filter((device) => device.id)
-              .map((device) => [device.id as string, device]),
+            devicesList.filter((d) => d.id).map((d) => [d.id as string, d])
           );
         }
-
-        if (key === 'queue' && value) {
+        if (key === "queue" && value) {
           const queueValue = value as {
             currently_playing?: { id?: string | null };
             queue?: Array<{ id?: string | null }>;
           };
-
           output.queue = {
             current_id: queueValue.currently_playing?.id ?? null,
             next_ids: Array.isArray(queueValue.queue)
-              ? (queueValue.queue.map((item) => item?.id).filter(Boolean) as string[])
+              ? (queueValue.queue
+                  .map((item) => item?.id)
+                  .filter(Boolean) as string[])
               : [],
           };
         }
-
-        if (key === 'current_track') {
+        if (key === "current_track") {
           const currentValue = value as {
             item?: unknown;
             is_playing?: boolean;
@@ -206,16 +165,15 @@ export const spotifyStatusTool = {
                 duration_ms?: number;
               }
             | undefined;
-
           if (trackItem) {
             output.current_track = {
-              type: 'track',
+              type: "track",
               id: String(trackItem.id),
               uri: String(trackItem.uri),
               name: String(trackItem.name),
               artists: Array.isArray(trackItem.artists)
                 ? (trackItem.artists
-                    .map((artist) => artist.name)
+                    .map((a) => a.name)
                     .filter(Boolean) as string[])
                 : [],
               album: trackItem.album?.name,
@@ -224,13 +182,11 @@ export const spotifyStatusTool = {
           } else {
             output.current_track = null;
           }
-
-          // Fallback: if player state wasn't requested, derive is_playing from currently-playing
-          if (typeof currentValue?.is_playing === 'boolean') {
+          if (typeof currentValue?.is_playing === "boolean") {
             output.player = {
               ...(output.player ?? {}),
               is_playing:
-                typeof output.player?.is_playing === 'boolean'
+                typeof output.player?.is_playing === "boolean"
                   ? (output.player?.is_playing as boolean)
                   : currentValue.is_playing,
             };
@@ -238,12 +194,10 @@ export const spotifyStatusTool = {
         }
       }
 
-      // Build status message
-      const devicesRequested = wantedData.has('devices');
+      const devicesRequested = wantedData.has("devices");
       const noDevices = devicesRequested && (output.devices ?? []).length === 0;
-      // Best-effort device name resolution if we only have device_id
       let activeDeviceName = output.devices?.find(
-        (d) => d.id === output.player?.device_id,
+        (d) => d.id === output.player?.device_id
       )?.name;
       if (!activeDeviceName && output.player?.device_id && !devicesRequested) {
         try {
@@ -251,8 +205,8 @@ export const spotifyStatusTool = {
           const devicesList = Array.isArray(dv?.devices)
             ? dv.devices.map((device) => ({
                 id: device.id ?? null,
-                name: String(device.name ?? ''),
-                type: String(device.type ?? ''),
+                name: String(device.name ?? ""),
+                type: String(device.type ?? ""),
                 is_active: !!device.is_active,
                 volume_percent: device.volume_percent ?? null,
               }))
@@ -261,21 +215,19 @@ export const spotifyStatusTool = {
           output.devicesById = Object.fromEntries(
             devicesList
               .filter((device) => device.id)
-              .map((device) => [device.id as string, device]),
+              .map((device) => [device.id as string, device])
           );
           activeDeviceName = devicesList.find(
-            (d) => d.id === output.player?.device_id,
+            (d) => d.id === output.player?.device_id
           )?.name;
-        } catch {
-          // ignore, best-effort only
-        }
+        } catch {}
       }
       const deviceLabel = activeDeviceName || undefined;
       const lastTrackNote = output.current_track?.name
         ? ` Last track was '${output.current_track.name}'.`
-        : '';
+        : "";
       const derivedIsPlaying =
-        typeof output.player?.is_playing === 'boolean'
+        typeof output.player?.is_playing === "boolean"
           ? (output.player?.is_playing as boolean)
           : undefined;
 
@@ -283,15 +235,15 @@ export const spotifyStatusTool = {
         const deviceBit = deviceLabel
           ? ` on device '${deviceLabel}'`
           : output.player?.device_id
-            ? ` on device id ${output.player.device_id}`
-            : '';
+          ? ` on device id ${output.player.device_id}`
+          : "";
         if (derivedIsPlaying === true) {
           const trackBit = output.current_track?.name
             ? `'${output.current_track.name}'`
-            : 'Content';
+            : "Content";
           const contextBit = output.player?.context_uri
             ? ` Context: ${output.player.context_uri}.`
-            : '';
+            : "";
           return `${trackBit} is playing${deviceBit}.${contextBit}`.trim();
         }
         if (derivedIsPlaying === false) {
@@ -302,10 +254,9 @@ export const spotifyStatusTool = {
           }
           return `No active playback.${lastTrackNote} To check devices, call player_status including "devices".`;
         }
-        // Unknown
         const contextBit = output.player?.context_uri
           ? ` Context: ${output.player.context_uri}.`
-          : '';
+          : "";
         return output.current_track?.name
           ? `Playback status unknown. '${output.current_track.name}' is the current item.${contextBit} Include 'player' to confirm is_playing and 'devices' to list targets.`
           : `Playback status unknown.${contextBit} Include 'player' to confirm is_playing and 'devices' to list targets.`;
@@ -315,54 +266,38 @@ export const spotifyStatusTool = {
         ...(output as SpotifyStatusOutput),
         _msg: statusMessage,
       };
-
-      const contentParts: Array<{ type: 'text'; text: string }> = [
-        { type: 'text', text: statusMessage },
+      const contentParts: Array<{ type: "text"; text: string }> = [
+        { type: "text", text: statusMessage },
       ];
       if (config.SPOTIFY_MCP_INCLUDE_JSON_IN_CONTENT) {
-        contentParts.push({ type: 'text', text: JSON.stringify(structured) });
+        contentParts.push({ type: "text", text: JSON.stringify(structured) });
       }
-
       return {
         content: contentParts,
         structuredContent: validateDev(SpotifyStatusOutput, structured),
       };
     } catch (error) {
       const err = error as Error;
-      logger.error('spotify_status', { error: err.message });
-
-      // Extract error code from error message if present
+      logger.error("spotify_status", { error: err.message });
       const codeMatch = err.message.match(/\[(\w+)\]$/);
-      const code = codeMatch ? (codeMatch[1] as ErrorCode) : 'bad_response';
-
-      // Map error codes to user-friendly messages
-      let userMessage = err.message.replace(/\s*\[\w+\]$/, '');
-
-      if (code === 'unauthorized') {
-        userMessage = 'Not authenticated. Please sign in to Spotify.';
-      } else if (code === 'forbidden') {
+      const code = codeMatch ? (codeMatch[1] as ErrorCode) : "bad_response";
+      let userMessage = err.message.replace(/\s*\[\w+\]$/, "");
+      if (code === "unauthorized")
+        userMessage = "Not authenticated. Please sign in to Spotify.";
+      else if (code === "forbidden")
         userMessage =
-          'Access denied. You may need additional permissions or Spotify Premium.';
-      } else if (code === 'rate_limited') {
-        userMessage = 'Too many requests. Please wait a moment and try again.';
-      }
-
+          "Access denied. You may need additional permissions or Spotify Premium.";
+      else if (code === "rate_limited")
+        userMessage = "Too many requests. Please wait a moment and try again.";
       return errorResult(userMessage, code);
     }
   },
 };
 
-// Helper function for error responses
-
 function errorResult(message: string, code?: string): CallToolResult {
   return {
     isError: true,
-    content: [{ type: 'text', text: message }],
-    structuredContent: {
-      ok: false,
-      action: 'status',
-      error: message,
-      code,
-    },
+    content: [{ type: "text", text: message }],
+    structuredContent: { ok: false, action: "status", error: message, code },
   };
 }

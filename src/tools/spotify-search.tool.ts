@@ -1,17 +1,16 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { config } from "../config/env.js";
-import { toolsMetadata } from "../config/metadata.js";
-import { createHttpClient } from "../core/http-client.js";
+import { config } from "../config/env.ts";
+import { toolsMetadata } from "../config/metadata.ts";
+import { createHttpClient } from "../services/http-client.ts";
 import {
   type SpotifySearchInput,
   SpotifySearchInputSchema,
-} from "../schemas/inputs.js";
-import { SpotifySearchBatchOutput } from "../schemas/outputs.js";
-import { searchCatalog } from "../services/spotify/catalog.js";
-import { createClientCredentialsAuth } from "../services/spotify/client-credentials-auth.js";
-// spotify.service.ts removed; use input schema types instead
-import { logger } from "../utils/logger.js";
-import { validateDev } from "../utils/validate.js";
+} from "../schemas/inputs.ts";
+import { SpotifySearchBatchOutput } from "../schemas/outputs.ts";
+import { searchCatalog } from "../services/spotify/catalog.ts";
+import { createClientCredentialsAuth } from "../services/spotify/client-credentials-auth.ts";
+import { logger } from "../utils/logger.ts";
+import { validateDev } from "../utils/validate.ts";
 
 const accountsHttp = createHttpClient({
   baseHeaders: {
@@ -51,13 +50,10 @@ export const spotifySearchTool = {
     signal?: AbortSignal
   ): Promise<CallToolResult> => {
     try {
-      // Validate inputs at boundary
       const parsed = SpotifySearchInputSchema.parse(args);
-
       const limit = parsed.limit ?? 20;
       const offset = parsed.offset ?? 0;
 
-      // Execute all searches in parallel
       const batches: Array<{
         inputIndex: number;
         query: string;
@@ -79,7 +75,6 @@ export const spotifySearchTool = {
             },
             signal
           );
-
           return {
             inputIndex,
             query,
@@ -90,13 +85,10 @@ export const spotifySearchTool = {
         })
       );
 
-      // Build concise, useful feedback including top URIs per query
       const itemPreviewLimit = 5;
       const multiQueryMsg = (() => {
         const buildPreview = (b: (typeof batches)[number]) => {
-          if (b.items.length === 0) {
-            return `No results for "${b.query}".`;
-          }
+          if (b.items.length === 0) return `No results for "${b.query}".`;
           const lines = b.items
             .slice(0, itemPreviewLimit)
             .map((it) => {
@@ -113,11 +105,7 @@ export const spotifySearchTool = {
               : "";
           return `Results for "${b.query}":\n${lines}${more}`;
         };
-
-        if (batches.length === 1) {
-          const b = batches[0];
-          return buildPreview(b);
-        }
+        if (batches.length === 1) return buildPreview(batches[0]!);
         const counts = batches.map((b) => `${b.items.length}× "${b.query}"`);
         const empties = batches
           .filter((b) => b.items.length === 0)
@@ -126,9 +114,8 @@ export const spotifySearchTool = {
           ", "
         )}.`;
         const previews = batches.map(buildPreview).join("\n\n");
-        if (empties.length > 0) {
+        if (empties.length > 0)
           return `${head} No results for ${empties.join(", ")}.\n\n${previews}`;
-        }
         return `${head}\n\n${previews}`;
       })();
 
@@ -145,10 +132,7 @@ export const spotifySearchTool = {
         { type: "text", text: multiQueryMsg },
       ];
       if (config.SPOTIFY_MCP_INCLUDE_JSON_IN_CONTENT) {
-        contentParts.push({
-          type: "text",
-          text: JSON.stringify(structured),
-        });
+        contentParts.push({ type: "text", text: JSON.stringify(structured) });
       }
 
       return {
@@ -158,12 +142,10 @@ export const spotifySearchTool = {
     } catch (error) {
       const message = (error as Error).message;
       logger.error("spotify_search", { error: message });
-      // Extract standardized code if present from service layer
       const codeMatch = message.match(
         /\[(unauthorized|forbidden|rate_limited|bad_response)\]$/
       );
       const code = codeMatch?.[1];
-
       const friendly = code
         ? code === "unauthorized"
           ? "Authorization failed for app credentials. Check SPOTIFY_CLIENT_ID/SECRET."
@@ -173,7 +155,6 @@ export const spotifySearchTool = {
           ? "Rate limited. Please wait and retry."
           : message.replace(/\s*\[[^\]]+\]$/, "")
         : message;
-
       const structured = {
         _msg: friendly,
         queries: [],
@@ -182,7 +163,6 @@ export const spotifySearchTool = {
         offset: 0,
         batches: [],
       } as const;
-
       return {
         isError: true,
         content: [{ type: "text", text: friendly }],

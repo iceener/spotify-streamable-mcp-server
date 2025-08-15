@@ -11,7 +11,7 @@ export function corsMiddleware(): MiddlewareHandler<{
     c.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
     c.header(
       'Access-Control-Allow-Headers',
-      'Content-Type, Authorization, Mcp-Session-Id, MCP-Protocol-Version, Mcp-Protocol-Version',
+      'Content-Type, Authorization, Mcp-Session-Id, MCP-Protocol-Version, Mcp-Protocol-Version, X-Api-Key, X-Auth-Token',
     );
     c.header('Access-Control-Expose-Headers', 'Mcp-Session-Id, WWW-Authenticate');
 

@@ -13,7 +13,7 @@ Tools
  - If a call returns Unauthorized, ask the user to authenticate and retry.
  - Prefer small limits and minimal polling unless asked to do otherwise.
  - Use player_status to pick device_id before control. If no active device is found, prompt the user to open Spotify and/or transfer to a listed device.
-- After control actions, the tool includes a concise status. For full details, you can still call player_status. If not playing, ask the user to open Spotify or transfer to a listed device.`,
+ - After control actions, the tool includes a concise status. For full details, you can still call player_status. If not playing, ask the user to open Spotify or transfer to a listed device.`,
 } as const;
 
 export const toolsMetadata = {

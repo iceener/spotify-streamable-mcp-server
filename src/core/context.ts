@@ -1,4 +1,4 @@
-import { AsyncLocalStorage } from 'node:async_hooks';
+import { AsyncLocalStorage } from "node:async_hooks";
 
 export type RequestContext = {
   sessionId?: string;
@@ -9,7 +9,7 @@ const ctxAls = new AsyncLocalStorage<RequestContext>();
 
 export function runWithRequestContext<T>(
   context: RequestContext,
-  fn: () => Promise<T>,
+  fn: () => Promise<T>
 ): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     ctxAls.run(context, async () => {

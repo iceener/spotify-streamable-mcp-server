@@ -1,23 +1,18 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   SpotifyControlBatchOutput,
   SpotifyLibraryOutputObject,
   SpotifyPlaylistOutputObject,
   SpotifySearchBatchOutput,
   SpotifyStatusOutputObject,
-} from '../schemas/outputs.js';
-import { logger } from '../utils/logger.js';
-import { spotifyControlTool } from './spotify-control.tool.js';
-import { spotifyLibraryTool } from './spotify-library.tool.js';
-// Schemas imported above in a single import
-import { spotifyPlaylistTool } from './spotify-playlist.tool.js';
-import { spotifySearchTool } from './spotify-search.tool.js';
-import { spotifyStatusTool } from './spotify-status.tool.js';
+} from "../schemas/outputs.ts";
+import { spotifySearchTool } from "./spotify-search.tool.ts";
+import { spotifyStatusTool } from "./spotify-status.tool.ts";
+import { spotifyControlTool } from "./spotify-control.tool.ts";
+import { spotifyPlaylistTool } from "./spotify-playlist.tool.ts";
+import { spotifyLibraryTool } from "./spotify-library.tool.ts";
 
 export function registerTools(server: McpServer): void {
-  // Register each tool individually to avoid TypeScript union type issues
-
-  // Spotify Search Tool
   server.registerTool(
     spotifySearchTool.name,
     {
@@ -30,10 +25,9 @@ export function registerTools(server: McpServer): void {
         openWorldHint: true,
       },
     },
-    (args) => spotifySearchTool.handler(args),
+    (args) => spotifySearchTool.handler(args)
   );
 
-  // Spotify Status Tool
   server.registerTool(
     spotifyStatusTool.name,
     {
@@ -46,10 +40,9 @@ export function registerTools(server: McpServer): void {
         openWorldHint: true,
       },
     },
-    (args) => spotifyStatusTool.handler(args),
+    (args) => spotifyStatusTool.handler(args)
   );
 
-  // Spotify Control Tool
   server.registerTool(
     spotifyControlTool.name,
     {
@@ -62,10 +55,9 @@ export function registerTools(server: McpServer): void {
         openWorldHint: true,
       },
     },
-    (args) => spotifyControlTool.handler(args),
+    (args) => spotifyControlTool.handler(args)
   );
 
-  // Playlist Management Tool
   server.registerTool(
     spotifyPlaylistTool.name,
     {
@@ -78,10 +70,9 @@ export function registerTools(server: McpServer): void {
         openWorldHint: true,
       },
     },
-    (args) => spotifyPlaylistTool.handler(args),
+    (args) => spotifyPlaylistTool.handler(args)
   );
 
-  // Library (Saved Songs) Tool
   server.registerTool(
     spotifyLibraryTool.name,
     {
@@ -94,18 +85,6 @@ export function registerTools(server: McpServer): void {
         openWorldHint: true,
       },
     },
-    (args) => spotifyLibraryTool.handler(args),
+    (args) => spotifyLibraryTool.handler(args)
   );
-
-  const toolNames = [
-    spotifySearchTool.name,
-    spotifyStatusTool.name,
-    spotifyControlTool.name,
-    spotifyPlaylistTool.name,
-    spotifyLibraryTool.name,
-  ];
-  logger.info('tools', {
-    message: `Registered ${toolNames.length} tools`,
-    toolNames,
-  });
 }

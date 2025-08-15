@@ -1,17 +1,16 @@
-import type { HttpClient } from '../../core/http-client.js';
+import type { HttpClient } from "../http-client.ts";
 import {
   CurrentlyPlayingCodec,
   DevicesResponseCodec,
   PlayerStateCodec,
   QueueResponseCodec,
-} from '../../types/spotify.codecs.js';
-import { expectOkOr204 } from '../../utils/http-result.js';
-import { apiBase } from '../../utils/spotify.js';
+} from "../../types/spotify.codecs.ts";
+import { expectOkOr204 } from "../../utils/http-result.ts";
+import { apiBase } from "../../utils/spotify.ts";
 
 export type AuthHeaders = { Authorization: string };
 
 function baseUrlWithSlash(baseUrl: string): string {
-  // Delegate to shared normalizer for consistency across codebase
   return apiBase(baseUrl);
 }
 
@@ -20,19 +19,19 @@ export async function getPlayerState(
   http: HttpClient,
   baseUrl: string,
   headers: AuthHeaders,
-  signal?: AbortSignal,
+  signal?: AbortSignal
 ) {
   const response = await http(
-    new URL('me/player', baseUrlWithSlash(baseUrl)).toString(),
+    new URL("me/player", baseUrlWithSlash(baseUrl)).toString(),
     {
       headers,
       signal,
-    },
+    }
   );
   if (response.status === 204) {
     return null;
   }
-  await expectOkOr204(response, 'Fetch player state failed');
+  await expectOkOr204(response, "Fetch player state failed");
   return PlayerStateCodec.parse(await response.json());
 }
 
@@ -40,13 +39,13 @@ export async function listDevices(
   http: HttpClient,
   baseUrl: string,
   headers: AuthHeaders,
-  signal?: AbortSignal,
+  signal?: AbortSignal
 ) {
   const response = await http(
-    new URL('me/player/devices', baseUrlWithSlash(baseUrl)).toString(),
-    { headers, signal },
+    new URL("me/player/devices", baseUrlWithSlash(baseUrl)).toString(),
+    { headers, signal }
   );
-  await expectOkOr204(response, 'Fetch devices failed');
+  await expectOkOr204(response, "Fetch devices failed");
   return DevicesResponseCodec.parse(await response.json());
 }
 
@@ -54,16 +53,16 @@ export async function getQueue(
   http: HttpClient,
   baseUrl: string,
   headers: AuthHeaders,
-  signal?: AbortSignal,
+  signal?: AbortSignal
 ) {
   const response = await http(
-    new URL('me/player/queue', baseUrlWithSlash(baseUrl)).toString(),
+    new URL("me/player/queue", baseUrlWithSlash(baseUrl)).toString(),
     {
       headers,
       signal,
-    },
+    }
   );
-  await expectOkOr204(response, 'Fetch queue failed');
+  await expectOkOr204(response, "Fetch queue failed");
   return QueueResponseCodec.parse(await response.json());
 }
 
@@ -71,16 +70,19 @@ export async function getCurrentlyPlaying(
   http: HttpClient,
   baseUrl: string,
   headers: AuthHeaders,
-  signal?: AbortSignal,
+  signal?: AbortSignal
 ) {
   const response = await http(
-    new URL('me/player/currently-playing', baseUrlWithSlash(baseUrl)).toString(),
-    { headers, signal },
+    new URL(
+      "me/player/currently-playing",
+      baseUrlWithSlash(baseUrl)
+    ).toString(),
+    { headers, signal }
   );
   if (response.status === 204) {
     return null;
   }
-  await expectOkOr204(response, 'Fetch current track failed');
+  await expectOkOr204(response, "Fetch current track failed");
   return CurrentlyPlayingCodec.parse(await response.json());
 }
 
@@ -96,13 +98,13 @@ export async function play(
     offset?: { position?: number; uri?: string };
     position_ms?: number;
   },
-  signal?: AbortSignal,
+  signal?: AbortSignal
 ) {
   const query = new URLSearchParams();
   if (options.device_id) {
-    query.set('device_id', options.device_id);
+    query.set("device_id", options.device_id);
   }
-  const url = new URL('me/player/play', baseUrlWithSlash(baseUrl)).toString();
+  const url = new URL("me/player/play", baseUrlWithSlash(baseUrl)).toString();
   const fullUrl = query.toString() ? `${url}?${query.toString()}` : url;
 
   const body: Record<string, unknown> = {};
@@ -117,17 +119,17 @@ export async function play(
   } else if (options.offset?.uri) {
     body.offset = { uri: options.offset.uri };
   }
-  if (typeof options.position_ms === 'number') {
+  if (typeof options.position_ms === "number") {
     body.position_ms = options.position_ms;
   }
 
   const response = await http(fullUrl, {
-    method: 'PUT',
+    method: "PUT",
     headers,
     body: Object.keys(body).length > 0 ? JSON.stringify(body) : undefined,
     signal,
   });
-  await expectOkOr204(response, 'Play failed');
+  await expectOkOr204(response, "Play failed");
 }
 
 export async function pause(
@@ -135,16 +137,16 @@ export async function pause(
   baseUrl: string,
   headers: AuthHeaders,
   options: { device_id?: string },
-  signal?: AbortSignal,
+  signal?: AbortSignal
 ) {
   const query = new URLSearchParams();
   if (options.device_id) {
-    query.set('device_id', options.device_id);
+    query.set("device_id", options.device_id);
   }
-  const url = new URL('me/player/pause', baseUrlWithSlash(baseUrl)).toString();
+  const url = new URL("me/player/pause", baseUrlWithSlash(baseUrl)).toString();
   const fullUrl = query.toString() ? `${url}?${query.toString()}` : url;
-  const response = await http(fullUrl, { method: 'PUT', headers, signal });
-  await expectOkOr204(response, 'Pause failed');
+  const response = await http(fullUrl, { method: "PUT", headers, signal });
+  await expectOkOr204(response, "Pause failed");
 }
 
 export async function next(
@@ -152,16 +154,16 @@ export async function next(
   baseUrl: string,
   headers: AuthHeaders,
   options: { device_id?: string },
-  signal?: AbortSignal,
+  signal?: AbortSignal
 ) {
   const query = new URLSearchParams();
   if (options.device_id) {
-    query.set('device_id', options.device_id);
+    query.set("device_id", options.device_id);
   }
-  const url = new URL('me/player/next', baseUrlWithSlash(baseUrl)).toString();
+  const url = new URL("me/player/next", baseUrlWithSlash(baseUrl)).toString();
   const fullUrl = query.toString() ? `${url}?${query.toString()}` : url;
-  const response = await http(fullUrl, { method: 'POST', headers, signal });
-  await expectOkOr204(response, 'Skip to next failed');
+  const response = await http(fullUrl, { method: "POST", headers, signal });
+  await expectOkOr204(response, "Skip to next failed");
 }
 
 export async function previous(
@@ -169,16 +171,19 @@ export async function previous(
   baseUrl: string,
   headers: AuthHeaders,
   options: { device_id?: string },
-  signal?: AbortSignal,
+  signal?: AbortSignal
 ) {
   const query = new URLSearchParams();
   if (options.device_id) {
-    query.set('device_id', options.device_id);
+    query.set("device_id", options.device_id);
   }
-  const url = new URL('me/player/previous', baseUrlWithSlash(baseUrl)).toString();
+  const url = new URL(
+    "me/player/previous",
+    baseUrlWithSlash(baseUrl)
+  ).toString();
   const fullUrl = query.toString() ? `${url}?${query.toString()}` : url;
-  const response = await http(fullUrl, { method: 'POST', headers, signal });
-  await expectOkOr204(response, 'Skip to previous failed');
+  const response = await http(fullUrl, { method: "POST", headers, signal });
+  await expectOkOr204(response, "Skip to previous failed");
 }
 
 export async function seek(
@@ -187,20 +192,20 @@ export async function seek(
   headers: AuthHeaders,
   position_ms: number,
   options: { device_id?: string },
-  signal?: AbortSignal,
+  signal?: AbortSignal
 ) {
   const query = new URLSearchParams();
-  query.set('position_ms', String(position_ms));
+  query.set("position_ms", String(position_ms));
   if (options.device_id) {
-    query.set('device_id', options.device_id);
+    query.set("device_id", options.device_id);
   }
-  const url = new URL('me/player/seek', baseUrlWithSlash(baseUrl)).toString();
+  const url = new URL("me/player/seek", baseUrlWithSlash(baseUrl)).toString();
   const response = await http(`${url}?${query.toString()}`, {
-    method: 'PUT',
+    method: "PUT",
     headers,
     signal,
   });
-  await expectOkOr204(response, 'Seek failed');
+  await expectOkOr204(response, "Seek failed");
 }
 
 export async function shuffle(
@@ -209,42 +214,45 @@ export async function shuffle(
   headers: AuthHeaders,
   state: boolean,
   options: { device_id?: string },
-  signal?: AbortSignal,
+  signal?: AbortSignal
 ) {
   const query = new URLSearchParams();
-  query.set('state', String(state));
+  query.set("state", String(state));
   if (options.device_id) {
-    query.set('device_id', options.device_id);
+    query.set("device_id", options.device_id);
   }
-  const url = new URL('me/player/shuffle', baseUrlWithSlash(baseUrl)).toString();
+  const url = new URL(
+    "me/player/shuffle",
+    baseUrlWithSlash(baseUrl)
+  ).toString();
   const response = await http(`${url}?${query.toString()}`, {
-    method: 'PUT',
+    method: "PUT",
     headers,
     signal,
   });
-  await expectOkOr204(response, 'Set shuffle failed');
+  await expectOkOr204(response, "Set shuffle failed");
 }
 
 export async function repeat(
   http: HttpClient,
   baseUrl: string,
   headers: AuthHeaders,
-  state: 'off' | 'track' | 'context',
+  state: "off" | "track" | "context",
   options: { device_id?: string },
-  signal?: AbortSignal,
+  signal?: AbortSignal
 ) {
   const query = new URLSearchParams();
-  query.set('state', state);
+  query.set("state", state);
   if (options.device_id) {
-    query.set('device_id', options.device_id);
+    query.set("device_id", options.device_id);
   }
-  const url = new URL('me/player/repeat', baseUrlWithSlash(baseUrl)).toString();
+  const url = new URL("me/player/repeat", baseUrlWithSlash(baseUrl)).toString();
   const response = await http(`${url}?${query.toString()}`, {
-    method: 'PUT',
+    method: "PUT",
     headers,
     signal,
   });
-  await expectOkOr204(response, 'Set repeat failed');
+  await expectOkOr204(response, "Set repeat failed");
 }
 
 export async function volume(
@@ -253,21 +261,21 @@ export async function volume(
   headers: AuthHeaders,
   volume_percent: number,
   options: { device_id?: string },
-  signal?: AbortSignal,
+  signal?: AbortSignal
 ) {
   const vol = Math.max(0, Math.min(100, volume_percent));
   const query = new URLSearchParams();
-  query.set('volume_percent', String(vol));
+  query.set("volume_percent", String(vol));
   if (options.device_id) {
-    query.set('device_id', options.device_id);
+    query.set("device_id", options.device_id);
   }
-  const url = new URL('me/player/volume', baseUrlWithSlash(baseUrl)).toString();
+  const url = new URL("me/player/volume", baseUrlWithSlash(baseUrl)).toString();
   const response = await http(`${url}?${query.toString()}`, {
-    method: 'PUT',
+    method: "PUT",
     headers,
     signal,
   });
-  await expectOkOr204(response, 'Set volume failed');
+  await expectOkOr204(response, "Set volume failed");
 }
 
 export async function transfer(
@@ -276,19 +284,19 @@ export async function transfer(
   headers: AuthHeaders,
   device_id: string,
   transfer_play = false,
-  signal?: AbortSignal,
+  signal?: AbortSignal
 ) {
   const body = JSON.stringify({ device_ids: [device_id], play: transfer_play });
   const response = await http(
-    new URL('me/player', baseUrlWithSlash(baseUrl)).toString(),
+    new URL("me/player", baseUrlWithSlash(baseUrl)).toString(),
     {
-      method: 'PUT',
+      method: "PUT",
       headers,
       body,
       signal,
-    },
+    }
   );
-  await expectOkOr204(response, 'Transfer playback failed');
+  await expectOkOr204(response, "Transfer playback failed");
 }
 
 export async function queueUri(
@@ -297,18 +305,18 @@ export async function queueUri(
   headers: AuthHeaders,
   queue_uri: string,
   options: { device_id?: string },
-  signal?: AbortSignal,
+  signal?: AbortSignal
 ) {
   const query = new URLSearchParams();
-  query.set('uri', queue_uri);
+  query.set("uri", queue_uri);
   if (options.device_id) {
-    query.set('device_id', options.device_id);
+    query.set("device_id", options.device_id);
   }
-  const url = new URL('me/player/queue', baseUrlWithSlash(baseUrl)).toString();
+  const url = new URL("me/player/queue", baseUrlWithSlash(baseUrl)).toString();
   const response = await http(`${url}?${query.toString()}`, {
-    method: 'POST',
+    method: "POST",
     headers,
     signal,
   });
-  await expectOkOr204(response, 'Queue failed');
+  await expectOkOr204(response, "Queue failed");
 }

@@ -1,8 +1,8 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 // Slim entities used across outputs
 const SlimTrackSchema = z.object({
-  type: z.literal('track'),
+  type: z.literal("track"),
   id: z.string(),
   uri: z.string().optional(),
   name: z.string(),
@@ -14,7 +14,7 @@ const SlimTrackSchema = z.object({
 export type SlimTrack = z.infer<typeof SlimTrackSchema>;
 
 const SlimArtistSchema = z.object({
-  type: z.literal('artist'),
+  type: z.literal("artist"),
   id: z.string(),
   uri: z.string().optional(),
   name: z.string(),
@@ -23,7 +23,7 @@ const SlimArtistSchema = z.object({
 export type SlimArtist = z.infer<typeof SlimArtistSchema>;
 
 const SlimAlbumSchema = z.object({
-  type: z.literal('album'),
+  type: z.literal("album"),
   id: z.string(),
   uri: z.string().optional(),
   name: z.string(),
@@ -32,7 +32,7 @@ const SlimAlbumSchema = z.object({
 export type SlimAlbum = z.infer<typeof SlimAlbumSchema>;
 
 const SlimPlaylistSchema = z.object({
-  type: z.literal('playlist'),
+  type: z.literal("playlist"),
   id: z.string(),
   uri: z.string().optional(),
   name: z.string(),
@@ -54,7 +54,7 @@ export type SlimDevice = z.infer<typeof SlimDeviceSchema>;
 export const SpotifySearchBatchOutput = z.object({
   _msg: z.string(),
   queries: z.array(z.string()),
-  types: z.array(z.enum(['album', 'artist', 'playlist', 'track'])),
+  types: z.array(z.enum(["album", "artist", "playlist", "track"])),
   limit: z.number(),
   offset: z.number(),
   batches: z.array(
@@ -68,9 +68,9 @@ export const SpotifySearchBatchOutput = z.object({
           SlimAlbumSchema,
           SlimArtistSchema,
           SlimPlaylistSchema,
-        ]),
+        ])
       ),
-    }),
+    })
   ),
 });
 export type SpotifySearchBatchOutput = z.infer<typeof SpotifySearchBatchOutput>;
@@ -82,7 +82,7 @@ export const SpotifyStatusOutput = z.object({
     .object({
       is_playing: z.boolean(),
       shuffle_state: z.boolean().optional(),
-      repeat_state: z.enum(['off', 'track', 'context']).optional(),
+      repeat_state: z.enum(["off", "track", "context"]).optional(),
       progress_ms: z.number().optional(),
       timestamp: z.number().optional(),
       device_id: z.string().optional(),
@@ -121,13 +121,15 @@ export const SpotifyControlBatchOutput = z.object({
       from_device_name: z.string().optional(),
       error: z.string().optional(),
       code: z
-        .enum(['unauthorized', 'forbidden', 'rate_limited', 'bad_response'])
+        .enum(["unauthorized", "forbidden", "rate_limited", "bad_response"])
         .optional(),
-    }),
+    })
   ),
   summary: z.object({ ok: z.number().int(), failed: z.number().int() }),
 });
-export type SpotifyControlBatchOutput = z.infer<typeof SpotifyControlBatchOutput>;
+export type SpotifyControlBatchOutput = z.infer<
+  typeof SpotifyControlBatchOutput
+>;
 
 // Playlist tool generic object output (stable shape across actions)
 export const SpotifyPlaylistOutputObject = z.object({
@@ -138,7 +140,9 @@ export const SpotifyPlaylistOutputObject = z.object({
   error: z.string().optional(),
   code: z.string().optional(),
 });
-export type SpotifyPlaylistOutputObject = z.infer<typeof SpotifyPlaylistOutputObject>;
+export type SpotifyPlaylistOutputObject = z.infer<
+  typeof SpotifyPlaylistOutputObject
+>;
 
 // Library tool generic object output (stable shape across actions)
 export const SpotifyLibraryOutputObject = z.object({
@@ -149,4 +153,10 @@ export const SpotifyLibraryOutputObject = z.object({
   error: z.string().optional(),
   code: z.string().optional(),
 });
-export type SpotifyLibraryOutputObject = z.infer<typeof SpotifyLibraryOutputObject>;
+export type SpotifyLibraryOutputObject = z.infer<
+  typeof SpotifyLibraryOutputObject
+>;
+
+// Example outputs
+export const AddOutputSchema = z.object({ sum: z.number() });
+export type AddOutput = z.infer<typeof AddOutputSchema>;

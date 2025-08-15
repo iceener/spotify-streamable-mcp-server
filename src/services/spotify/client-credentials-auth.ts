@@ -1,5 +1,5 @@
-import type { HttpClient } from '../../core/http-client.js';
-import { mapStatusToCode } from '../../utils/http-result.js';
+import type { HttpClient } from "../http-client.ts";
+import { mapStatusToCode } from "../../utils/http-result.ts";
 
 export type ClientCredentialsAuthDeps = {
   accountsHttp: HttpClient;
@@ -18,7 +18,7 @@ export function createClientCredentialsAuth(deps: ClientCredentialsAuthDeps) {
   function ensureCreds(): void {
     if (!deps.clientId || !deps.clientSecret) {
       throw new Error(
-        'Spotify client credentials are not configured. Set SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET',
+        "Spotify client credentials are not configured. Set SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET"
       );
     }
   }
@@ -30,28 +30,28 @@ export function createClientCredentialsAuth(deps: ClientCredentialsAuthDeps) {
       }
 
       ensureCreds();
-      const tokenUrl = new URL('/api/token', deps.accountsUrl).toString();
+      const tokenUrl = new URL("/api/token", deps.accountsUrl).toString();
       const body = new URLSearchParams({
-        grant_type: 'client_credentials',
+        grant_type: "client_credentials",
       }).toString();
       const basic = btoa(`${deps.clientId}:${deps.clientSecret}`);
 
       const resp = await deps.accountsHttp(tokenUrl, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
+          "Content-Type": "application/x-www-form-urlencoded",
           Authorization: `Basic ${basic}`,
         },
         body,
         signal,
       });
       if (!resp.ok) {
-        const text = await resp.text().catch(() => '');
+        const text = await resp.text().catch(() => "");
         const code = mapStatusToCode(resp.status);
         throw new Error(
           `Spotify token request failed: ${resp.status} ${resp.statusText}${
-            text ? ` - ${text}` : ''
-          } [${code}]`,
+            text ? ` - ${text}` : ""
+          } [${code}]`
         );
       }
       const json = (await resp.json()) as {

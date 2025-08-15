@@ -31,13 +31,10 @@ export const getSession = (id: string): Session | null => {
   if (!session) {
     return null;
   }
-
-  // Optional: Clean up expired sessions (24 hour TTL)
   const ttl = 24 * 60 * 60 * 1000; // 24 hours
   if (Date.now() - session.createdAt > ttl) {
     sessions.delete(id);
     return null;
   }
-
   return session;
 };
