@@ -1,8 +1,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { config } from '../config/env.ts';
-import { registerTools } from '../tools/index.ts';
 import { registerPrompts } from '../prompts/index.ts';
 import { registerResources } from '../resources/index.ts';
+import { registerTools } from '../tools/index.ts';
 import { buildCapabilities } from './capabilities.ts';
 import { initializeServerLogging } from './logging.ts';
 

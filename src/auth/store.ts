@@ -48,7 +48,7 @@ type KVNamespace = {
   put(
     key: string,
     value: string,
-    options?: { expiration?: number; expirationTtl?: number }
+    options?: { expiration?: number; expirationTtl?: number },
   ): Promise<void>;
   delete(key: string): Promise<void>;
 };
@@ -79,16 +79,16 @@ function fromJson<T>(value: string | null): T | null {
 
 // --- Optional application-layer encryption (AES-GCM via TOKENS_ENC_KEY) ---
 function b64urlEncode(bytes: Uint8Array): string {
-  let s = "";
+  let s = '';
   for (const b of bytes) {
     s += String.fromCharCode(b);
   }
   const b64 = btoa(s);
-  return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 }
 
 function b64urlDecode(data: string): Uint8Array {
-  const padded = data.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = data.replace(/-/g, '+').replace(/_/g, '/');
   const bin = atob(padded);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) {
@@ -101,20 +101,16 @@ async function getCryptoKey(): Promise<CryptoKey | undefined> {
   try {
     const secret =
       (ENV as unknown as { TOKENS_ENC_KEY?: string })?.TOKENS_ENC_KEY ||
-      ((
-        globalThis as unknown as { process?: { env?: Record<string, unknown> } }
-      )?.process?.env?.TOKENS_ENC_KEY as string | undefined);
+      ((globalThis as unknown as { process?: { env?: Record<string, unknown> } })
+        ?.process?.env?.TOKENS_ENC_KEY as string | undefined);
     if (!secret) {
       return undefined;
     }
     const raw = b64urlDecode(String(secret));
-    return await crypto.subtle.importKey(
-      "raw",
-      raw,
-      { name: "AES-GCM" },
-      false,
-      ["encrypt", "decrypt"]
-    );
+    return await crypto.subtle.importKey('raw', raw, { name: 'AES-GCM' }, false, [
+      'encrypt',
+      'decrypt',
+    ]);
   } catch {
     return undefined;
   }
@@ -127,10 +123,10 @@ async function encryptString(plain: string): Promise<string> {
   }
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const enc = new TextEncoder().encode(plain);
-  const ctBuf = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, enc);
+  const ctBuf = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc);
   const ct = b64urlEncode(new Uint8Array(ctBuf));
   const ivb64 = b64urlEncode(iv);
-  return JSON.stringify({ alg: "A256GCM", iv: ivb64, ct });
+  return JSON.stringify({ alg: 'A256GCM', iv: ivb64, ct });
 }
 
 async function decryptString(stored: string): Promise<string> {
@@ -140,7 +136,7 @@ async function decryptString(stored: string): Promise<string> {
       iv?: string;
       ct?: string;
     };
-    if (!obj || obj.alg !== "A256GCM" || !obj.iv || !obj.ct) {
+    if (!obj || obj.alg !== 'A256GCM' || !obj.iv || !obj.ct) {
       return stored;
     }
     const key = await getCryptoKey();
@@ -149,7 +145,7 @@ async function decryptString(stored: string): Promise<string> {
     }
     const iv = b64urlDecode(obj.iv);
     const ct = b64urlDecode(obj.ct);
-    const ptBuf = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ct);
+    const ptBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
     return new TextDecoder().decode(ptBuf);
   } catch {
     return stored;
@@ -159,7 +155,7 @@ async function decryptString(stored: string): Promise<string> {
 async function kvPutJson(
   key: string,
   value: unknown,
-  options?: { expiration?: number; expirationTtl?: number }
+  options?: { expiration?: number; expirationTtl?: number },
 ) {
   const kv = getKV();
   const raw = await encryptString(toJson(value));
@@ -182,7 +178,7 @@ async function kvGetJson<T>(key: string): Promise<T | null> {
 async function kvPutString(
   key: string,
   value: string,
-  options?: { expiration?: number; expirationTtl?: number }
+  options?: { expiration?: number; expirationTtl?: number },
 ) {
   await kvPutJson(key, { v: value }, options);
 }
@@ -196,7 +192,7 @@ async function kvGetString(key: string): Promise<string | null> {
 export async function saveTransaction(
   txnId: string,
   txn: Txn,
-  ttlSeconds = 600
+  ttlSeconds = 600,
 ): Promise<void> {
   const kv = getKV();
   if (kv) {
@@ -227,7 +223,7 @@ export async function deleteTransaction(txnId: string): Promise<void> {
 export async function saveCode(
   code: string,
   txnId: string,
-  ttlSeconds = 600
+  ttlSeconds = 600,
 ): Promise<void> {
   const kv = getKV();
   if (kv) {
@@ -258,7 +254,7 @@ export async function deleteCode(code: string): Promise<void> {
 export async function storeRsTokenMapping(
   rsAccessToken: string,
   spotifyTokens: SpotifyUserTokens,
-  rsRefreshToken?: string
+  rsRefreshToken?: string,
 ): Promise<void> {
   const kv = getKV();
   const rec = {
@@ -277,9 +273,7 @@ export async function storeRsTokenMapping(
   memRsByRefresh.set(rec.rs_refresh_token, rec);
 }
 
-export async function getRecordByRsRefreshToken(
-  rsRefreshToken?: string
-): Promise<{
+export async function getRecordByRsRefreshToken(rsRefreshToken?: string): Promise<{
   rs_access_token: string;
   rs_refresh_token: string;
   spotify: SpotifyUserTokens;
@@ -302,7 +296,7 @@ export async function getRecordByRsRefreshToken(
 export async function updateSpotifyTokensByRsRefreshToken(
   rsRefreshToken: string,
   newSpotify: SpotifyUserTokens,
-  maybeNewRsAccessToken?: string
+  maybeNewRsAccessToken?: string,
 ): Promise<{
   rs_access_token: string;
   rs_refresh_token: string;
@@ -345,7 +339,7 @@ export async function updateSpotifyTokensByRsRefreshToken(
 }
 
 export async function getSpotifyTokensByRsAccessToken(
-  rsAccessToken?: string
+  rsAccessToken?: string,
 ): Promise<SpotifyUserTokens | null> {
   if (!rsAccessToken) {
     return null;

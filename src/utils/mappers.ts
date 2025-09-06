@@ -3,13 +3,13 @@ import type {
   PlaylistDetailsResponseCodecType,
   PlaylistSimplifiedCodecType,
   TrackCodecType,
-} from "../types/spotify.codecs.ts";
+} from '../types/spotify.codecs.ts';
 
 export function toSlimTrack(t: TrackCodecType) {
   return {
-    type: "track" as const,
-    id: String(t.id ?? ""),
-    name: String(t.name ?? ""),
+    type: 'track' as const,
+    id: String(t.id ?? ''),
+    name: String(t.name ?? ''),
     uri: t.uri ?? undefined,
     url: t.external_urls?.spotify ?? undefined,
     artists: Array.isArray(t.artists)
@@ -22,11 +22,11 @@ export function toSlimTrack(t: TrackCodecType) {
 
 export function toPlaylistSummary(p: PlaylistSimplifiedCodecType) {
   return {
-    id: String(p.id ?? ""),
-    name: String(p.name ?? ""),
+    id: String(p.id ?? ''),
+    name: String(p.name ?? ''),
     uri: p.uri ?? undefined,
     url: p.external_urls?.spotify ?? undefined,
-    public: typeof p.public === "boolean" ? p.public : undefined,
+    public: typeof p.public === 'boolean' ? p.public : undefined,
     owner_name: p.owner?.display_name ?? undefined,
     images: pickLargestImageUrl(p.images),
     tracks_total: p.tracks?.total ?? undefined,
@@ -35,12 +35,12 @@ export function toPlaylistSummary(p: PlaylistSimplifiedCodecType) {
 
 export function toPlaylistDetails(p: PlaylistDetailsResponseCodecType) {
   return {
-    id: String(p.id ?? ""),
-    name: String(p.name ?? ""),
+    id: String(p.id ?? ''),
+    name: String(p.name ?? ''),
     description: p.description ?? undefined,
     uri: p.uri ?? undefined,
     url: p.external_urls?.spotify ?? undefined,
-    public: typeof p.public === "boolean" ? p.public : undefined,
+    public: typeof p.public === 'boolean' ? p.public : undefined,
     owner_name: p.owner?.display_name ?? undefined,
     images: pickLargestImageUrl(p.images),
     tracks_total: p.tracks?.total ?? undefined,
@@ -48,12 +48,13 @@ export function toPlaylistDetails(p: PlaylistDetailsResponseCodecType) {
 }
 
 function pickLargestImageUrl(
-  images: Array<{ url?: string; width?: number; height?: number }> | unknown
+  images: Array<{ url?: string; width?: number; height?: number }> | unknown,
 ): string | undefined {
-  const list: Array<{ url?: string; width?: number; height?: number }> =
-    Array.isArray(images)
-      ? (images as Array<{ url?: string; width?: number; height?: number }>)
-      : [];
+  const list: Array<{ url?: string; width?: number; height?: number }> = Array.isArray(
+    images,
+  )
+    ? (images as Array<{ url?: string; width?: number; height?: number }>)
+    : [];
   if (list.length === 0) {
     return undefined;
   }
@@ -63,9 +64,9 @@ function pickLargestImageUrl(
 
 export function toSlimAlbum(a: MinimalEntityCodecType) {
   return {
-    type: "album" as const,
-    id: String(a.id ?? ""),
-    name: String(a.name ?? ""),
+    type: 'album' as const,
+    id: String(a.id ?? ''),
+    name: String(a.name ?? ''),
     uri: a.uri ?? undefined,
     url: a.external_urls?.spotify ?? undefined,
   };
@@ -73,21 +74,21 @@ export function toSlimAlbum(a: MinimalEntityCodecType) {
 
 export function toSlimArtist(a: MinimalEntityCodecType) {
   return {
-    type: "artist" as const,
-    id: String(a.id ?? ""),
-    name: String(a.name ?? ""),
+    type: 'artist' as const,
+    id: String(a.id ?? ''),
+    name: String(a.name ?? ''),
     uri: a.uri ?? undefined,
     url: a.external_urls?.spotify ?? undefined,
   };
 }
 
 export function toSlimPlaylist(
-  p: MinimalEntityCodecType & { owner?: { display_name?: string | null } }
+  p: MinimalEntityCodecType & { owner?: { display_name?: string | null } },
 ) {
   return {
-    type: "playlist" as const,
-    id: String(p.id ?? ""),
-    name: String(p.name ?? ""),
+    type: 'playlist' as const,
+    id: String(p.id ?? ''),
+    name: String(p.name ?? ''),
     uri: p.uri ?? undefined,
     url: p.external_urls?.spotify ?? undefined,
     owner: p.owner?.display_name ?? undefined,

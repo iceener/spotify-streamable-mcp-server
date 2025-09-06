@@ -1,17 +1,17 @@
-import { z } from "zod";
-import type { HttpClient } from "../http-client.ts";
+import { z } from 'zod';
 import {
   MinimalEntityCodec,
   SearchResponseCodec,
   TrackCodec,
-} from "../../types/spotify.codecs.ts";
-import { mapStatusToCode } from "../../utils/http-result.ts";
+} from '../../types/spotify.codecs.ts';
+import { mapStatusToCode } from '../../utils/http-result.ts';
 import {
   toSlimAlbum,
   toSlimArtist,
   toSlimPlaylist,
   toSlimTrack,
-} from "../../utils/mappers.ts";
+} from '../../utils/mappers.ts';
+import type { HttpClient } from '../http-client.ts';
 
 export type SearchParams = {
   q: string;
@@ -19,7 +19,7 @@ export type SearchParams = {
   market?: string;
   limit?: number;
   offset?: number;
-  include_external?: "audio";
+  include_external?: 'audio';
 };
 
 export async function searchCatalog(
@@ -27,24 +27,24 @@ export async function searchCatalog(
   apiBaseUrl: string,
   getAppToken: (signal?: AbortSignal) => Promise<string>,
   params: SearchParams,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ) {
   const token = await getAppToken(signal);
-  const base = apiBaseUrl.endsWith("/") ? apiBaseUrl : `${apiBaseUrl}/`;
-  const url = new URL("search", base);
-  url.searchParams.set("q", params.q);
-  url.searchParams.set("type", params.types.join(","));
+  const base = apiBaseUrl.endsWith('/') ? apiBaseUrl : `${apiBaseUrl}/`;
+  const url = new URL('search', base);
+  url.searchParams.set('q', params.q);
+  url.searchParams.set('type', params.types.join(','));
   if (params.limit) {
-    url.searchParams.set("limit", String(params.limit));
+    url.searchParams.set('limit', String(params.limit));
   }
   if (params.offset) {
-    url.searchParams.set("offset", String(params.offset));
+    url.searchParams.set('offset', String(params.offset));
   }
   if (params.market) {
-    url.searchParams.set("market", params.market);
+    url.searchParams.set('market', params.market);
   }
   if (params.include_external) {
-    url.searchParams.set("include_external", params.include_external);
+    url.searchParams.set('include_external', params.include_external);
   }
 
   const response = await http(url.toString(), {
@@ -52,12 +52,12 @@ export async function searchCatalog(
     signal,
   });
   if (!response.ok) {
-    const text = await response.text().catch(() => "");
+    const text = await response.text().catch(() => '');
     const code = mapStatusToCode(response.status);
     throw new Error(
       `Search failed: ${response.status} ${response.statusText}${
-        text ? ` - ${text}` : ""
-      } [${code}]`
+        text ? ` - ${text}` : ''
+      } [${code}]`,
     );
   }
   const json = SearchResponseCodec.parse(await response.json());
@@ -72,9 +72,7 @@ export async function searchCatalog(
 
   if (json.tracks) {
     totals.track = json.tracks.total ?? 0;
-    const trackItems = Array.isArray(json.tracks.items)
-      ? json.tracks.items
-      : [];
+    const trackItems = Array.isArray(json.tracks.items) ? json.tracks.items : [];
     for (const raw of trackItems) {
       const parsed = TrackCodec.safeParse(raw);
       if (parsed.success) {
@@ -88,9 +86,7 @@ export async function searchCatalog(
 
   if (json.albums) {
     totals.album = json.albums.total ?? 0;
-    const albumItems = Array.isArray(json.albums.items)
-      ? json.albums.items
-      : [];
+    const albumItems = Array.isArray(json.albums.items) ? json.albums.items : [];
     for (const raw of albumItems) {
       const parsed = MinimalEntityCodec.safeParse(raw);
       if (parsed.success) {
@@ -104,9 +100,7 @@ export async function searchCatalog(
 
   if (json.artists) {
     totals.artist = json.artists.total ?? 0;
-    const artistItems = Array.isArray(json.artists.items)
-      ? json.artists.items
-      : [];
+    const artistItems = Array.isArray(json.artists.items) ? json.artists.items : [];
     for (const raw of artistItems) {
       const parsed = MinimalEntityCodec.safeParse(raw);
       if (parsed.success) {
@@ -125,9 +119,7 @@ export async function searchCatalog(
       : [];
     for (const raw of playlistItems) {
       const parsed = MinimalEntityCodec.extend({
-        owner: z
-          .object({ display_name: z.string().nullable().optional() })
-          .optional(),
+        owner: z.object({ display_name: z.string().nullable().optional() }).optional(),
       }).safeParse(raw);
       if (parsed.success) {
         const slim = toSlimPlaylist(parsed.data);

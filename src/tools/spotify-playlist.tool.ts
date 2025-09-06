@@ -2,12 +2,12 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { config } from "../config/env.ts";
 import { toolsMetadata } from "../config/metadata.ts";
 import { getUserBearer } from "../core/auth.ts";
-import { createHttpClient } from "../services/http-client.ts";
 import {
   type SpotifyPlaylistInput,
   SpotifyPlaylistInputSchema,
 } from "../schemas/inputs.ts";
 import { SpotifyPlaylistOutputObject } from "../schemas/outputs.ts";
+import { createHttpClient } from "../services/http-client.ts";
 import {
   MeResponseCodec,
   PlaylistDetailsResponseCodec,

@@ -1,16 +1,16 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   SpotifyControlBatchOutput,
   SpotifyLibraryOutputObject,
   SpotifyPlaylistOutputObject,
   SpotifySearchBatchOutput,
   SpotifyStatusOutputObject,
-} from "../schemas/outputs.ts";
-import { spotifySearchTool } from "./spotify-search.tool.ts";
-import { spotifyStatusTool } from "./spotify-status.tool.ts";
-import { spotifyControlTool } from "./spotify-control.tool.ts";
-import { spotifyPlaylistTool } from "./spotify-playlist.tool.ts";
-import { spotifyLibraryTool } from "./spotify-library.tool.ts";
+} from '../schemas/outputs.ts';
+import { spotifyControlTool } from './spotify-control.tool.ts';
+import { spotifyLibraryTool } from './spotify-library.tool.ts';
+import { spotifyPlaylistTool } from './spotify-playlist.tool.ts';
+import { spotifySearchTool } from './spotify-search.tool.ts';
+import { spotifyStatusTool } from './spotify-status.tool.ts';
 
 export function registerTools(server: McpServer): void {
   server.registerTool(
@@ -25,7 +25,7 @@ export function registerTools(server: McpServer): void {
         openWorldHint: true,
       },
     },
-    (args) => spotifySearchTool.handler(args)
+    (args) => spotifySearchTool.handler(args),
   );
 
   server.registerTool(
@@ -40,7 +40,7 @@ export function registerTools(server: McpServer): void {
         openWorldHint: true,
       },
     },
-    (args) => spotifyStatusTool.handler(args)
+    (args) => spotifyStatusTool.handler(args),
   );
 
   server.registerTool(
@@ -55,7 +55,7 @@ export function registerTools(server: McpServer): void {
         openWorldHint: true,
       },
     },
-    (args) => spotifyControlTool.handler(args)
+    (args) => spotifyControlTool.handler(args),
   );
 
   server.registerTool(
@@ -70,7 +70,7 @@ export function registerTools(server: McpServer): void {
         openWorldHint: true,
       },
     },
-    (args) => spotifyPlaylistTool.handler(args)
+    (args) => spotifyPlaylistTool.handler(args),
   );
 
   server.registerTool(
@@ -85,6 +85,6 @@ export function registerTools(server: McpServer): void {
         openWorldHint: true,
       },
     },
-    (args) => spotifyLibraryTool.handler(args)
+    (args) => spotifyLibraryTool.handler(args),
   );
 }

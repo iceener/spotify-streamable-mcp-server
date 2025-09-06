@@ -3,10 +3,10 @@ import { Hono } from 'hono';
 import { config } from '../config/env.ts';
 import { serverMetadata } from '../config/metadata.ts';
 import { buildServer } from '../core/mcp.ts';
+import { createAuthHeaderMiddleware } from './middlewares/auth.ts';
 import { corsMiddleware } from './middlewares/cors.ts';
 import { createMcpSecurityMiddleware } from './middlewares/mcp-security.ts';
 import { discoveryRoutes } from './routes/discovery.ts';
-import { createAuthHeaderMiddleware } from './middlewares/auth.ts';
 import { healthRoutes } from './routes/health.ts';
 import { buildMcpRoutes } from './routes/mcp.ts';
 

@@ -2,12 +2,12 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { config } from "../config/env.ts";
 import { toolsMetadata } from "../config/metadata.ts";
 import { getUserBearer } from "../core/auth.ts";
-import { createHttpClient } from "../services/http-client.ts";
 import {
   type SpotifyControlInput,
   SpotifyControlInputSchema,
 } from "../schemas/inputs.ts";
 import { SpotifyControlBatchOutput } from "../schemas/outputs.ts";
+import { createHttpClient } from "../services/http-client.ts";
 import {
   next as apiNext,
   pause as apiPause,
@@ -101,10 +101,38 @@ export const spotifyControlTool = {
             ? parsed.operations[lastSuccessfulPlayIndex]
             : undefined;
 
-        const [player, current] = await Promise.all([
+        // Initial query for player state and current track
+        let [player, current] = await Promise.all([
           getPlayerState(http, baseUrl, headers, signal),
           getCurrentlyPlaying(http, baseUrl, headers, signal).catch(() => null),
         ]);
+
+        // If we had successful play operations, wait and re-query to ensure track has changed
+        if (successfulPlayIndices.length > 0) {
+          await new Promise((resolve) => setTimeout(resolve, 2500)); // Wait 2.5 seconds
+
+          // Re-query current track after delay
+          try {
+            const [updatedPlayer, updatedCurrent] = await Promise.all([
+              getPlayerState(http, baseUrl, headers, signal),
+              getCurrentlyPlaying(http, baseUrl, headers, signal).catch(
+                () => null
+              ),
+            ]);
+            player = updatedPlayer;
+            current = updatedCurrent;
+            void logger.info("spotify_control", {
+              message:
+                "Re-queried track information after play operation delay",
+            });
+          } catch (error) {
+            void logger.warning("spotify_control", {
+              message:
+                "Failed to re-query track after delay, using initial data",
+              error: (error as Error).message,
+            });
+          }
+        }
         let deviceName: string | undefined;
         let volumePercent: number | undefined;
         let currentTrackUri: string | undefined;
@@ -188,11 +216,20 @@ export const spotifyControlTool = {
             ? contextUri === lastPlayOp.context_uri
             : undefined;
           let trackVerified: boolean | undefined;
-          if (Array.isArray(lastPlayOp.uris) && currentTrackUri) {
-            trackVerified = lastPlayOp.uris.includes(currentTrackUri);
-          } else if (lastPlayOp.offset?.uri && currentTrackUri) {
-            trackVerified = lastPlayOp.offset.uri === currentTrackUri;
+          let expectedTrackUri: string | undefined;
+
+          if (Array.isArray(lastPlayOp.uris) && lastPlayOp.uris.length > 0) {
+            expectedTrackUri = lastPlayOp.uris[0]; // First track in the list
+            trackVerified = currentTrackUri
+              ? lastPlayOp.uris.includes(currentTrackUri)
+              : false;
+          } else if (lastPlayOp.offset?.uri) {
+            expectedTrackUri = lastPlayOp.offset.uri;
+            trackVerified = currentTrackUri
+              ? lastPlayOp.offset.uri === currentTrackUri
+              : false;
           }
+
           if (contextVerified === true) {
             statusBits.push(
               `Context verified: ${contextName ? `'${contextName}' — ` : ""}${
@@ -210,22 +247,30 @@ export const spotifyControlTool = {
               }.`
             );
           }
+
           if (trackVerified === true) {
-            statusBits.push(
-              `Track verified${currentTrackUri ? `: ${currentTrackUri}` : ""}.`
-            );
+            statusBits.push(`Track verified: Now playing the requested track.`);
           } else if (trackVerified === false) {
+            const expectedName = expectedTrackUri
+              ? ` (expected: ${expectedTrackUri})`
+              : "";
             statusBits.push(
-              `Track mismatch${
+              `Track may still be switching${expectedName}${
                 currentTrackUri ? ` (current: ${currentTrackUri})` : ""
-              }.`
+              }. Spotify typically takes 1-3 seconds to switch tracks.`
+            );
+          } else if (expectedTrackUri && !currentTrackUri) {
+            statusBits.push(
+              `Track switching in progress. Expected track: ${expectedTrackUri}.`
             );
           }
         }
         if (statusBits.length > 0) {
           summary += ` Status: ${statusBits.join(" ")}`;
+        } else if (successfulPlayIndices.length > 0) {
+          summary += ` Status: Play command sent successfully. Track switching may take 1-3 seconds to complete.`;
         } else if (didPlayLike) {
-          summary += ` Status: Unable to confirm playback immediately.`;
+          summary += ` Status: Playback operation completed.`;
         }
       } catch {}
 

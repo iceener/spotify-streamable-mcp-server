@@ -3,12 +3,12 @@ import { config } from "../config/env.ts";
 import { toolsMetadata } from "../config/metadata.ts";
 import { getUserBearer } from "../core/auth.ts";
 import { getCurrentSessionId } from "../core/context.ts";
-import { createHttpClient } from "../services/http-client.ts";
 import {
   type SpotifyStatusInput,
   SpotifyStatusInputSchema,
 } from "../schemas/inputs.ts";
 import { SpotifyStatusOutput } from "../schemas/outputs.ts";
+import { createHttpClient } from "../services/http-client.ts";
 import {
   getCurrentlyPlaying,
   getPlayerState,

@@ -1,7 +1,7 @@
-import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
-import { config } from "../config/env.ts";
+import { randomBytes } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
+import { config } from '../config/env.ts';
 
 export type SpotifyUserTokens = {
   access_token: string;
@@ -22,10 +22,10 @@ const rsRefreshToRecord = new Map<string, RsTokenRecord>();
 
 export function generateOpaqueToken(bytes: number = 32): string {
   return randomBytes(bytes)
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/g, "");
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
 }
 
 function persistPath(): string | null {
@@ -46,7 +46,7 @@ function loadPersisted(): void {
   if (!p) return;
   try {
     if (!existsSync(p)) return;
-    const raw = readFileSync(p, "utf8");
+    const raw = readFileSync(p, 'utf8');
     const data = JSON.parse(raw) as PersistShape;
     if (!data || !Array.isArray(data.records)) return;
     for (const rec of data.records) {
@@ -77,7 +77,7 @@ function savePersisted(): void {
       spotify: r.spotify,
     }));
     const obj: PersistShape = { records };
-    writeFileSync(p, JSON.stringify(obj, null, 2), "utf8");
+    writeFileSync(p, JSON.stringify(obj, null, 2), 'utf8');
   } catch {}
 }
 
@@ -86,7 +86,7 @@ loadPersisted();
 export function storeRsTokenMapping(
   rsAccessToken: string,
   spotifyTokens: SpotifyUserTokens,
-  rsRefreshToken?: string
+  rsRefreshToken?: string,
 ): RsTokenRecord {
   if (rsRefreshToken) {
     const existing = rsRefreshToRecord.get(rsRefreshToken);
@@ -111,16 +111,14 @@ export function storeRsTokenMapping(
   return record;
 }
 
-export function getSpotifyTokensByRsToken(
-  rsToken?: string
-): SpotifyUserTokens | null {
+export function getSpotifyTokensByRsToken(rsToken?: string): SpotifyUserTokens | null {
   if (!rsToken) return null;
   const rec = rsAccessToRecord.get(rsToken);
   return rec ? rec.spotify : null;
 }
 
 export function getRecordByRsRefreshToken(
-  rsRefreshToken?: string
+  rsRefreshToken?: string,
 ): RsTokenRecord | null {
   if (!rsRefreshToken) return null;
   return rsRefreshToRecord.get(rsRefreshToken) ?? null;
@@ -129,7 +127,7 @@ export function getRecordByRsRefreshToken(
 export function updateSpotifyTokensByRsRefreshToken(
   rsRefreshToken: string,
   newSpotify: SpotifyUserTokens,
-  maybeNewRsAccessToken?: string
+  maybeNewRsAccessToken?: string,
 ): RsTokenRecord | null {
   const rec = rsRefreshToRecord.get(rsRefreshToken);
   if (!rec) return null;
