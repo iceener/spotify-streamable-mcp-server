@@ -12,10 +12,22 @@ export class ProgressReporter {
     try {
       const lowLevel =
         (this.server as unknown as { server?: unknown })?.server ?? this.server;
-      await (lowLevel as { notification?: Function })?.notification?.({
+      await (
+        lowLevel as {
+          notification?: (payload: {
+            method: string;
+            params: {
+              id: string;
+              progress: number;
+              total?: number;
+              message?: string;
+            };
+          }) => Promise<void>;
+        }
+      )?.notification?.({
         method: 'notifications/progress',
         params: {
-          progressToken: this.progressToken,
+          id: this.progressToken,
           progress,
           total,
           ...(message ? { message } : {}),

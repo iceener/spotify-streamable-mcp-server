@@ -24,6 +24,7 @@ import { serverMetadata } from './config/metadata.ts';
 import { runWithRequestContext } from './core/context.ts';
 import { ensureSession } from './core/session.ts';
 import { registerTools } from './tools/index.ts';
+import { logger } from './utils/logger.ts';
 
 const MCP_ENDPOINT_PATH = '/mcp';
 
@@ -38,7 +39,10 @@ type ToolRecord = {
   title?: string;
   description?: string;
   inputSchema: Record<string, unknown>;
-  handler: (args: Record<string, unknown>) => Promise<{
+  handler: (
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+  ) => Promise<{
     content?: Array<unknown>;
     structuredContent?: unknown;
     isError?: boolean;
@@ -53,7 +57,7 @@ type RegisterSchema = {
   annotations?: { title?: string };
 };
 
-type RegisterHandler = (args: unknown) => Promise<unknown>;
+type RegisterHandler = (args: unknown, signal?: AbortSignal) => Promise<unknown>;
 
 const adapter: {
   registerTool: (
@@ -102,8 +106,8 @@ const adapter: {
       return (input ?? {}) as Record<string, unknown>;
     }
 
-    const wrappedHandler: ToolRecord['handler'] = async (args) => {
-      const result = await handler(args);
+    const wrappedHandler: ToolRecord['handler'] = async (args, signal) => {
+      const result = await handler(args, signal);
       return result as {
         content?: Array<unknown>;
         structuredContent?: unknown;
@@ -161,7 +165,9 @@ function isAllowedRedirectUri(uri: string): boolean {
         ?.process?.env ?? {};
     const allowAll =
       String(env.OAUTH_REDIRECT_ALLOW_ALL || 'false').toLowerCase() === 'true';
-    if (allowAll) return true;
+    if (allowAll) {
+      return true;
+    }
     const allowRaw = String(env.OAUTH_REDIRECT_ALLOWLIST || '');
     const allowed = new Set(
       allowRaw
@@ -174,7 +180,9 @@ function isAllowedRedirectUri(uri: string): boolean {
     const isDev = String(env.NODE_ENV || 'development') === 'development';
     if (isDev) {
       const loopback = new Set(['localhost', '127.0.0.1', '::1']);
-      if (loopback.has(u.hostname)) return true;
+      if (loopback.has(u.hostname)) {
+        return true;
+      }
     }
     return (
       allowed.has(`${u.protocol}//${u.host}${u.pathname}`) || allowed.has(u.toString())
@@ -186,9 +194,9 @@ function isAllowedRedirectUri(uri: string): boolean {
 
 const router = Router();
 
-router.options(MCP_ENDPOINT_PATH, async () =>
-  withCors(new Response(null, { status: 204 })),
-);
+router.options(MCP_ENDPOINT_PATH, async () => {
+  return withCors(new Response(null, { status: 204 }));
+});
 
 router.post(MCP_ENDPOINT_PATH, async (request: Request) => {
   const headerRecord: Record<string, string> = {};
@@ -197,7 +205,7 @@ router.post(MCP_ENDPOINT_PATH, async (request: Request) => {
   });
 
   const incomingSid = request.headers.get('Mcp-Session-Id');
-  const sid = incomingSid && incomingSid.trim() ? incomingSid : crypto.randomUUID();
+  const sid = incomingSid?.trim() ? incomingSid : crypto.randomUUID();
   try {
     ensureSession(sid);
   } catch {}
@@ -333,13 +341,54 @@ router.post(MCP_ENDPOINT_PATH, async (request: Request) => {
         }
         try {
           const tool = tools[name];
-          const result = await tool?.handler(args);
+          const toolsTimeoutMsRaw =
+            (env.MCP_TOOL_TIMEOUT_MS as number | string) ?? 25000;
+          const toolsTimeoutMs = Number(toolsTimeoutMsRaw) || 25000;
+          await logger.info('mcp_worker', {
+            message: 'tools/call start',
+            tool: name,
+            timeoutMs: toolsTimeoutMs,
+          });
+          const controller = new AbortController();
+          const timeoutPromise = new Promise<unknown>((resolve) => {
+            setTimeout(() => {
+              try {
+                controller.abort('tool_timeout');
+              } catch {}
+              resolve({
+                isError: true,
+                content: [
+                  {
+                    type: 'text',
+                    text: 'Tool timed out. Please retry or reduce requested data.',
+                  },
+                ],
+              });
+            }, toolsTimeoutMs);
+          });
+          const result = (await Promise.race([
+            tool?.handler(args as Record<string, unknown>, controller.signal),
+            timeoutPromise,
+          ])) as unknown;
+          await logger.info('mcp_worker', {
+            message: 'tools/call done',
+            tool: name,
+          });
           return withCors(ok(id, result));
         } catch (e) {
+          const msg = (e as Error)?.message || 'Unknown error';
+          const isTimeout = /aborted|abort|tool_timeout/i.test(msg);
           return withCors(
             ok(id, {
               isError: true,
-              content: [{ type: 'text', text: `Tool failed: ${(e as Error).message}` }],
+              content: [
+                {
+                  type: 'text',
+                  text: isTimeout
+                    ? 'Tool timed out. Please retry or reduce requested data.'
+                    : `Tool failed: ${msg}`,
+                },
+              ],
             }),
           );
         }
@@ -349,16 +398,16 @@ router.post(MCP_ENDPOINT_PATH, async (request: Request) => {
   );
 });
 
-router.get(MCP_ENDPOINT_PATH, async () =>
-  withCors(new Response('Method Not Allowed', { status: 405 })),
-);
-router.get('/health', async () =>
-  withCors(
+router.get(MCP_ENDPOINT_PATH, async () => {
+  return withCors(new Response('Method Not Allowed', { status: 405 }));
+});
+router.get('/health', async () => {
+  return withCors(
     new Response(JSON.stringify({ status: 'ok' }), {
       headers: { 'content-type': 'application/json; charset=utf-8' },
     }),
-  ),
-);
+  );
+});
 
 router.get('/.well-known/oauth-authorization-server', async (request: Request) => {
   const base = new URL(request.url).origin;
@@ -394,7 +443,9 @@ router.get('/.well-known/oauth-protected-resource', async (request: Request) => 
   const resourceBase = `${base}${MCP_ENDPOINT_PATH}`;
   const resourceUrl = (() => {
     try {
-      if (!sid) return resourceBase;
+      if (!sid) {
+        return resourceBase;
+      }
       const u = new URL(resourceBase);
       u.searchParams.set('sid', sid);
       return u.toString();
@@ -464,8 +515,12 @@ router.get('/authorize', async (request: Request) => {
     authUrl.searchParams.set('response_type', 'code');
     authUrl.searchParams.set('client_id', clientId);
     authUrl.searchParams.set('redirect_uri', cb);
-    if (scopeParam) authUrl.searchParams.set('scope', scopeParam);
-    if (composite) authUrl.searchParams.set('state', composite);
+    if (scopeParam) {
+      authUrl.searchParams.set('scope', scopeParam);
+    }
+    if (composite) {
+      authUrl.searchParams.set('state', composite);
+    }
     return withCors(Response.redirect(authUrl.toString(), 302));
   }
   const code = crypto.randomUUID();
@@ -475,7 +530,9 @@ router.get('/authorize', async (request: Request) => {
     : (env.OAUTH_REDIRECT_URI as string) || 'alice://oauth/callback';
   const redirect = new URL(target);
   redirect.searchParams.set('code', code);
-  if (state) redirect.searchParams.set('state', state);
+  if (state) {
+    redirect.searchParams.set('state', state);
+  }
   return withCors(Response.redirect(redirect.toString(), 302));
 });
 
@@ -616,7 +673,9 @@ router.get('/spotify/callback', async (request: Request) => {
     }
     const redirect = new URL(safe);
     redirect.searchParams.set('code', asCode);
-    if (decoded.cs) redirect.searchParams.set('state', decoded.cs);
+    if (decoded.cs) {
+      redirect.searchParams.set('state', decoded.cs);
+    }
     const sid = decoded.sid;
     if (sid) {
       try {
@@ -695,7 +754,9 @@ router.post('/token', async (request: Request) => {
   const digest = await crypto.subtle.digest('SHA-256', data);
   const bytes = new Uint8Array(digest);
   let binary = '';
-  for (const b of bytes) binary += String.fromCharCode(b);
+  for (const b of bytes) {
+    binary += String.fromCharCode(b);
+  }
   const base64 = btoa(binary)
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
@@ -744,7 +805,9 @@ router.post('/token', async (request: Request) => {
   );
 });
 
-router.all('*', () => withCors(new Response('Not Found', { status: 404 })));
+router.all('*', () => {
+  return withCors(new Response('Not Found', { status: 404 }));
+});
 
 export default {
   fetch(request: Request, env?: Record<string, unknown>): Promise<Response> | Response {

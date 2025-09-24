@@ -25,14 +25,14 @@ export function createAuthHeaderMiddleware(): MiddlewareHandler<{
     }
 
     // If Authorization is our RS token, keep RS (downstream can exchange). In RS-only mode, strip unknown bearer.
-    const auth = forwarded['authorization'];
+    const auth = forwarded.authorization;
     const bearerMatch = auth?.match(/^\s*Bearer\s+(.+)$/i);
     const rs = bearerMatch?.[1];
     if (rs) {
       try {
         const mapped = getSpotifyTokensByRsToken(rs);
         if (!mapped && config.AUTH_REQUIRE_RS && !config.AUTH_ALLOW_DIRECT_BEARER) {
-          delete forwarded['authorization'];
+          delete forwarded.authorization;
         }
       } catch {
         // best-effort; leave header as-is on errors

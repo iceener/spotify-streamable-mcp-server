@@ -32,14 +32,46 @@ class Logger {
   }
 
   private async log(level: LogLevel, loggerName: string, data: unknown): Promise<void> {
-    if (!this.shouldLog(level)) return;
+    if (!this.shouldLog(level)) {
+      return;
+    }
 
     try {
-      const lowLevel = (this.server as any)?.server ?? (this.server as any);
-      if (lowLevel?.sendLoggingMessage) {
-        await lowLevel.sendLoggingMessage({ level, logger: loggerName, data });
-      } else if (lowLevel?.notification) {
-        await lowLevel.notification({
+      const lowLevel =
+        (
+          this.server as
+            | {
+                server?: {
+                  sendLoggingMessage?: unknown;
+                  notification?: unknown;
+                };
+              }
+            | undefined
+        )?.server ?? this.server;
+      const sendLoggingMessage = (
+        lowLevel as {
+          sendLoggingMessage?: (payload: {
+            level: LogLevel;
+            logger: string;
+            data: unknown;
+          }) => Promise<void> | void;
+        }
+      )?.sendLoggingMessage;
+      if (typeof sendLoggingMessage === 'function') {
+        await sendLoggingMessage({ level, logger: loggerName, data });
+        return;
+      }
+
+      const notify = (
+        lowLevel as {
+          notification?: (payload: {
+            method: string;
+            params: { level: LogLevel; logger: string; data: unknown };
+          }) => Promise<void> | void;
+        }
+      )?.notification;
+      if (typeof notify === 'function') {
+        await notify({
           method: 'notifications/message',
           params: { level, logger: loggerName, data },
         });

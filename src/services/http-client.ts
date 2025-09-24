@@ -51,7 +51,7 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
         method,
       });
 
-      for (let attempt = 1; attempt <= retries; attempt++) {
+      for (let attempt = 1; attempt <= Math.max(retries, 1); attempt++) {
         try {
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), timeout);

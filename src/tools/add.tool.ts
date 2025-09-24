@@ -1,13 +1,12 @@
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { toolsMetadata } from '../config/metadata.ts';
 import { AddInputSchema } from '../schemas/inputs.ts';
 
 type AddArgs = { a: number; b: number };
 
 export const addTool = {
-  name: toolsMetadata.add.name,
-  title: toolsMetadata.add.title,
-  description: toolsMetadata.add.description,
+  name: 'add',
+  title: 'Add Numbers',
+  description: 'Utility tool to add two numbers.',
   inputSchema: AddInputSchema.shape,
 
   handler: async (args: AddArgs): Promise<CallToolResult> => {

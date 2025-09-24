@@ -55,11 +55,15 @@ export const spotifyLibraryTool = {
       switch (parsed.action) {
         case 'tracks_get': {
           const url = new URL('me/tracks', baseUrl);
-          if (parsed.market) url.searchParams.set('market', parsed.market);
-          if (typeof parsed.limit === 'number')
+          if (parsed.market) {
+            url.searchParams.set('market', parsed.market);
+          }
+          if (typeof parsed.limit === 'number') {
             url.searchParams.set('limit', String(parsed.limit));
-          if (typeof parsed.offset === 'number')
+          }
+          if (typeof parsed.offset === 'number') {
             url.searchParams.set('offset', String(parsed.offset));
+          }
           const response = await http(url.toString(), { headers, signal });
           await expectOkOr204(response, 'List saved tracks failed');
           const json = SavedTracksResponseCodec.parse(await response.json());
@@ -93,12 +97,13 @@ export const spotifyLibraryTool = {
           );
         }
         case 'tracks_add': {
-          if (!parsed.ids || parsed.ids.length === 0)
+          if (!parsed.ids || parsed.ids.length === 0) {
             return fail(
               'ids are required for tracks_add',
               'invalid_arguments',
               args.action,
             );
+          }
           const url = new URL('me/tracks', baseUrl).toString();
           const body = JSON.stringify({ ids: parsed.ids });
           const response = await http(url, {
@@ -133,12 +138,13 @@ export const spotifyLibraryTool = {
           );
         }
         case 'tracks_remove': {
-          if (!parsed.ids || parsed.ids.length === 0)
+          if (!parsed.ids || parsed.ids.length === 0) {
             return fail(
               'ids are required for tracks_remove',
               'invalid_arguments',
               args.action,
             );
+          }
           const url = new URL('me/tracks', baseUrl).toString();
           const body = JSON.stringify({ ids: parsed.ids });
           const response = await http(url, {
@@ -173,12 +179,13 @@ export const spotifyLibraryTool = {
           );
         }
         case 'tracks_contains': {
-          if (!parsed.ids || parsed.ids.length === 0)
+          if (!parsed.ids || parsed.ids.length === 0) {
             return fail(
               'ids are required for tracks_contains',
               'invalid_arguments',
               args.action,
             );
+          }
           const url = new URL('me/tracks/contains', baseUrl);
           url.searchParams.set('ids', parsed.ids.join(','));
           const response = await http(url.toString(), { headers, signal });
@@ -217,13 +224,14 @@ export const spotifyLibraryTool = {
       );
       const code = (codeMatch?.[1] as string | undefined) ?? 'bad_response';
       let userMessage = message.replace(/\s*\[[^\]]+\]$/, '');
-      if (code === 'unauthorized')
+      if (code === 'unauthorized') {
         userMessage = 'Not authenticated. Please sign in to Spotify.';
-      else if (code === 'forbidden')
+      } else if (code === 'forbidden') {
         userMessage =
           'Access denied. You may need additional permissions or Spotify Premium.';
-      else if (code === 'rate_limited')
+      } else if (code === 'rate_limited') {
         userMessage = 'Too many requests. Please wait a moment and try again.';
+      }
       return fail(userMessage, code, 'unknown');
     }
   },
@@ -275,7 +283,9 @@ async function fetchTrackSlims(params: {
 }): Promise<{ name: string; uri?: string }[]> {
   const { http: client, baseUrl, headers, ids, signal } = params;
   const unique = Array.from(new Set(ids)).slice(0, 50);
-  if (unique.length === 0) return [];
+  if (unique.length === 0) {
+    return [];
+  }
   const tUrl = new URL('tracks', baseUrl);
   tUrl.searchParams.set('ids', unique.join(','));
   const tResp = await client(tUrl.toString(), { headers, signal });

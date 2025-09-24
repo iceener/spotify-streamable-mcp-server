@@ -14,7 +14,9 @@ export class CancellationToken {
   }
 
   cancel(): void {
-    if (this.isCancelledInternal) return;
+    if (this.isCancelledInternal) {
+      return;
+    }
     this.isCancelledInternal = true;
     for (const listener of this.listeners) {
       try {

@@ -80,7 +80,7 @@ export function createMcpSecurityMiddleware(): MiddlewareHandler<{
       }
 
       return next();
-    } catch (error) {
+    } catch (_error) {
       return c.json(
         {
           jsonrpc: '2.0',

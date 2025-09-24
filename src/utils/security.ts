@@ -3,7 +3,9 @@ import { config } from '../config/env.ts';
 export const validateProtocolVersion = (headers: Headers): void => {
   const header =
     headers.get('Mcp-Protocol-Version') || headers.get('MCP-Protocol-Version');
-  if (!header) return;
+  if (!header) {
+    return;
+  }
   const versions = header
     .split(',')
     .map((v) => v.trim())
@@ -18,7 +20,9 @@ export const validateProtocolVersion = (headers: Headers): void => {
 export const validateOrigin = (headers: Headers): void => {
   const origin = headers.get('Origin') || headers.get('origin');
 
-  if (!origin) return; // non-browser callers
+  if (!origin) {
+    return; // non-browser callers
+  }
 
   if (config.NODE_ENV === 'development') {
     if (!isLocalhostOrigin(origin)) {

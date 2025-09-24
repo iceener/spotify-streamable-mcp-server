@@ -76,7 +76,9 @@ function isAllowedRedirect(uri: string): boolean {
     const url = new URL(uri);
     if (config.NODE_ENV === 'development') {
       const loopback = new Set(['localhost', '127.0.0.1', '::1']);
-      if (loopback.has(url.hostname)) return true;
+      if (loopback.has(url.hostname)) {
+        return true;
+      }
     }
     return (
       allowed.has(`${url.protocol}//${url.host}${url.pathname}`) || allowed.has(uri)
@@ -125,9 +127,12 @@ export function oauthRoutes() {
     const requestedScope = url.searchParams.get('scope') ?? undefined;
     const sid = url.searchParams.get('sid') ?? undefined;
 
-    if (!redirectUri) return c.text('invalid_request: redirect_uri', 400);
-    if (!codeChallenge || codeChallengeMethod !== 'S256')
+    if (!redirectUri) {
+      return c.text('invalid_request: redirect_uri', 400);
+    }
+    if (!codeChallenge || codeChallengeMethod !== 'S256') {
       return c.text('invalid_request: pkce', 400);
+    }
 
     if (sid) {
       try {
@@ -161,7 +166,9 @@ export function oauthRoutes() {
         .filter(Boolean)
         .join(' ');
       const scopeToUse = oauthScopes || requestedScope || '';
-      if (scopeToUse) authUrl.searchParams.set('scope', scopeToUse);
+      if (scopeToUse) {
+        authUrl.searchParams.set('scope', scopeToUse);
+      }
       const compositeState =
         b64urlEncodeJson({ tid, cs: state, cr: redirectUri, sid }) || tid;
       authUrl.searchParams.set('state', compositeState);
@@ -177,7 +184,9 @@ export function oauthRoutes() {
       : config.OAUTH_REDIRECT_URI;
     const redirect = new URL(safe);
     redirect.searchParams.set('code', code);
-    if (state) redirect.searchParams.set('state', state);
+    if (state) {
+      redirect.searchParams.set('state', state);
+    }
     return c.redirect(redirect.toString(), 302);
   });
 
@@ -186,7 +195,9 @@ export function oauthRoutes() {
       const here = new URL(c.req.url);
       const code = here.searchParams.get('code');
       const state = here.searchParams.get('state');
-      if (!code || !state) return c.text('invalid_callback', 400);
+      if (!code || !state) {
+        return c.text('invalid_callback', 400);
+      }
       const decoded =
         b64urlDecodeJson<{
           tid?: string;
@@ -196,7 +207,9 @@ export function oauthRoutes() {
         }>(state) || {};
       const txnId = decoded.tid || state;
       const txn = transactions.get(txnId);
-      if (!txn) return c.text('unknown_txn', 400);
+      if (!txn) {
+        return c.text('unknown_txn', 400);
+      }
 
       const tokenUrl = new URL('/api/token', config.SPOTIFY_ACCOUNTS_URL).toString();
       const hereBase = `${here.protocol}//${here.host}`;
@@ -228,7 +241,9 @@ export function oauthRoutes() {
         scope?: string;
       };
       const access_token = String(data.access_token || '');
-      if (!access_token) return c.text('spotify_no_token', 500);
+      if (!access_token) {
+        return c.text('spotify_no_token', 500);
+      }
       const expires_at = Date.now() + Number(data.expires_in ?? 3600) * 1000;
       const scopes = String(data.scope || '')
         .split(/\s+/)
@@ -249,7 +264,9 @@ export function oauthRoutes() {
         : config.OAUTH_REDIRECT_URI;
       const redirect = new URL(safe);
       redirect.searchParams.set('code', asCode);
-      if (decoded.cs) redirect.searchParams.set('state', decoded.cs);
+      if (decoded.cs) {
+        redirect.searchParams.set('state', decoded.cs);
+      }
       // Session attachment
       if (decoded.sid) {
         try {
@@ -280,7 +297,9 @@ export function oauthRoutes() {
     if (grant === 'refresh_token') {
       const rsRefresh = form.get('refresh_token') || '';
       const rec = getRecordByRsRefreshToken(rsRefresh);
-      if (!rec) return c.json({ error: 'invalid_grant' }, 400);
+      if (!rec) {
+        return c.json({ error: 'invalid_grant' }, 400);
+      }
       const newAccess = genOpaque(24);
       const updated = updateSpotifyTokensByRsRefreshToken(
         rsRefresh,
@@ -296,18 +315,25 @@ export function oauthRoutes() {
       });
     }
 
-    if (grant !== 'authorization_code')
+    if (grant !== 'authorization_code') {
       return c.json({ error: 'unsupported_grant_type' }, 400);
+    }
 
     const code = form.get('code') || '';
     const codeVerifier = form.get('code_verifier') || '';
     const txnId = codes.get(code);
-    if (!txnId) return c.json({ error: 'invalid_grant' }, 400);
+    if (!txnId) {
+      return c.json({ error: 'invalid_grant' }, 400);
+    }
     const txn = transactions.get(txnId);
-    if (!txn) return c.json({ error: 'invalid_grant' }, 400);
+    if (!txn) {
+      return c.json({ error: 'invalid_grant' }, 400);
+    }
     const expected = txn.codeVerifierHash;
     const actual = sha256B64Url(codeVerifier);
-    if (expected !== actual) return c.json({ error: 'invalid_grant' }, 400);
+    if (expected !== actual) {
+      return c.json({ error: 'invalid_grant' }, 400);
+    }
 
     const rsAccess = genOpaque(24);
     const rsRefresh = genOpaque(24);

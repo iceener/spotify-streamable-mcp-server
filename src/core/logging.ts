@@ -5,7 +5,14 @@ export function initializeServerLogging(server: McpServer): void {
   logger.setServer(server);
   try {
     const lowLevel = (server as unknown as { server?: unknown })?.server ?? server;
-    (lowLevel as { setRequestHandler?: Function })?.setRequestHandler?.(
+    (
+      lowLevel as {
+        setRequestHandler?: (
+          method: string,
+          handler: (request: { params?: { level?: unknown } }) => Promise<void>,
+        ) => void;
+      }
+    )?.setRequestHandler?.(
       'logging/setLevel',
       async (request: { params?: { level?: unknown } }) => {
         const level =
@@ -18,7 +25,6 @@ export function initializeServerLogging(server: McpServer): void {
             message: `Log level set to ${level}`,
           });
         }
-        return {} as const;
       },
     );
   } catch {}

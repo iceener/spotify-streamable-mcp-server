@@ -14,7 +14,9 @@ export function discoveryRoutes() {
       const resourceBase = `${here.protocol}//${here.host}/mcp`;
       const resourceUrl = (() => {
         try {
-          if (!sid) return resourceBase;
+          if (!sid) {
+            return resourceBase;
+          }
           const u = new URL(resourceBase);
           u.searchParams.set('sid', sid);
           return u.toString();
@@ -37,7 +39,9 @@ export function discoveryRoutes() {
       const resourceBase = `${here.protocol}//${here.host}/mcp`;
       const resourceUrl = (() => {
         try {
-          if (!sid) return resourceBase;
+          if (!sid) {
+            return resourceBase;
+          }
           const u = new URL(resourceBase);
           u.searchParams.set('sid', sid);
           return u.toString();

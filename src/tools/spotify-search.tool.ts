@@ -87,7 +87,9 @@ export const spotifySearchTool = {
       const itemPreviewLimit = 5;
       const multiQueryMsg = (() => {
         const buildPreview = (b: (typeof batches)[number]) => {
-          if (b.items.length === 0) return `No results for "${b.query}".`;
+          if (b.items.length === 0) {
+            return `No results for "${b.query}".`;
+          }
           const lines = b.items
             .slice(0, itemPreviewLimit)
             .map((it) => {
@@ -104,15 +106,22 @@ export const spotifySearchTool = {
               : '';
           return `Results for "${b.query}":\n${lines}${more}`;
         };
-        if (batches.length === 1) return buildPreview(batches[0]!);
+        if (batches.length === 1) {
+          const firstBatch = batches[0];
+          if (!firstBatch) {
+            return 'No search results.';
+          }
+          return buildPreview(firstBatch);
+        }
         const counts = batches.map((b) => `${b.items.length}× "${b.query}"`);
         const empties = batches
           .filter((b) => b.items.length === 0)
           .map((b) => `"${b.query}"`);
         const head = `Processed ${batches.length} queries — ${counts.join(', ')}.`;
         const previews = batches.map(buildPreview).join('\n\n');
-        if (empties.length > 0)
+        if (empties.length > 0) {
           return `${head} No results for ${empties.join(', ')}.\n\n${previews}`;
+        }
         return `${head}\n\n${previews}`;
       })();
 

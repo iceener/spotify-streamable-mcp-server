@@ -10,11 +10,16 @@ export function createCursor(offset: number): PaginationCursor {
 }
 
 export function parseCursor(cursor?: PaginationCursor): number {
-  if (!cursor) return 0;
+  if (!cursor) {
+    return 0;
+  }
   try {
     const decoded = Buffer.from(cursor, 'base64').toString('utf-8');
-    const parsed = JSON.parse(decoded) as { offset?: unknown };
-    return typeof parsed.offset === 'number' ? parsed.offset : 0;
+    const parsed = JSON.parse(decoded) as { offset?: number };
+    if (!parsed || typeof parsed.offset !== 'number') {
+      return 0;
+    }
+    return parsed.offset;
   } catch {
     return 0;
   }
