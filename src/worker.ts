@@ -10,18 +10,23 @@ import { zodToJsonSchema } from 'zod-to-json-schema';
 import {
   deleteCode,
   deleteTransaction,
+  getRecordByRsAccessToken,
   getRecordByRsRefreshToken,
+  getSessionRecord,
   getSpotifyTokensByRsAccessToken,
+  getSpotifyTokensWithRefreshByRsAccessToken,
   getTransaction,
   getTxnIdByCode,
   saveCode,
   saveTransaction,
   setAuthStoreEnv,
   storeRsTokenMapping,
+  storeSessionRecord,
   updateSpotifyTokensByRsRefreshToken,
 } from './auth/store.ts';
 import { serverMetadata } from './config/metadata.ts';
 import { runWithRequestContext } from './core/context.ts';
+import type { Session } from './core/session.ts';
 import { ensureSession } from './core/session.ts';
 import { registerTools } from './tools/index.ts';
 import { logger } from './utils/logger.ts';
@@ -254,12 +259,20 @@ router.post(MCP_ENDPOINT_PATH, async (request: Request) => {
 
   let rsMapped = false;
   let bearer: string | undefined;
+  let bearerRecord: {
+    rs_access_token: string;
+    rs_refresh_token: string;
+    spotify: { access_token?: string; expires_at?: number };
+  } | null = null;
   if (authHeaderIn) {
     const m = authHeaderIn.match(/^\s*Bearer\s+(.+)$/i);
     bearer = m?.[1];
     if (bearer) {
       try {
-        const mapped = await getSpotifyTokensByRsAccessToken(bearer);
+        bearerRecord = await getRecordByRsAccessToken(bearer);
+        const mapped = bearerRecord?.spotify?.access_token
+          ? { access_token: bearerRecord.spotify.access_token }
+          : await getSpotifyTokensByRsAccessToken(bearer);
         if (mapped?.access_token) {
           headerRecord.authorization = `Bearer ${mapped.access_token}`;
           rsMapped = true;
@@ -273,13 +286,18 @@ router.post(MCP_ENDPOINT_PATH, async (request: Request) => {
     return challenge(origin);
   }
 
+  const rsTokenForContext =
+    bearerRecord?.rs_access_token || (rsMapped ? bearer : undefined);
+  const spotifyTokenForContext =
+    rsMapped && headerRecord.authorization
+      ? headerRecord.authorization.replace(/^\s*Bearer\s+/i, '')
+      : undefined;
+
   return runWithRequestContext(
     {
       sessionId: sid,
-      spotifyAccessToken:
-        rsMapped && headerRecord.authorization
-          ? headerRecord.authorization.replace(/^\s*Bearer\s+/i, '')
-          : undefined,
+      rsToken: rsTokenForContext,
+      spotifyAccessToken: spotifyTokenForContext,
     },
     async () => {
       const raw = await request.text();
@@ -327,6 +345,13 @@ router.post(MCP_ENDPOINT_PATH, async (request: Request) => {
         return withCors(ok(id, { prompts: [] }));
       }
       if (method === 'tools/call') {
+        if (rsTokenForContext) {
+          await ensureWorkerSession({
+            sessionId: sid,
+            rsToken: rsTokenForContext,
+            signal: AbortSignal.timeout(10_000),
+          });
+        }
         const nameValue = (params as Record<string, unknown> | undefined)?.name;
         const name = typeof nameValue === 'string' ? nameValue : undefined;
         const argsValue = (params as Record<string, unknown> | undefined)?.arguments;
@@ -852,3 +877,84 @@ export default {
     return router.handle(request);
   },
 };
+
+async function ensureWorkerSession(params: {
+  sessionId: string;
+  rsToken: string;
+  existing?: Session | null;
+  signal?: AbortSignal;
+}): Promise<void> {
+  const { sessionId, rsToken, existing, signal } = params;
+  const session = existing ?? ensureSession(sessionId);
+
+  const persisted = await getSessionRecord(sessionId).catch(() => null);
+  if (persisted?.spotify) {
+    session.spotify = {
+      access_token: persisted.spotify.access_token,
+      refresh_token: persisted.spotify.refresh_token,
+      expires_at: persisted.spotify.expires_at,
+      scopes: persisted.spotify.scopes,
+    };
+  }
+  if (persisted?.rs_access_token && persisted.rs_refresh_token) {
+    session.rs = {
+      access_token: persisted.rs_access_token,
+      refresh_token: persisted.rs_refresh_token,
+    };
+  }
+
+  let record = await getRecordByRsAccessToken(rsToken);
+  if (record) {
+    session.rs = {
+      access_token: record.rs_access_token,
+      refresh_token: record.rs_refresh_token,
+    };
+  }
+
+  const tokensResult = await getSpotifyTokensWithRefreshByRsAccessToken(rsToken, {
+    signal,
+    refreshWindowMs: 60_000,
+  });
+
+  let spotify = tokensResult?.tokens ?? undefined;
+  if (!spotify) {
+    const spotifyTokens = await getSpotifyTokensByRsAccessToken(rsToken);
+    spotify = spotifyTokens ?? undefined;
+  }
+  if (!spotify?.access_token) {
+    return;
+  }
+
+  session.spotify = {
+    access_token: spotify.access_token,
+    refresh_token: spotify.refresh_token,
+    expires_at: spotify.expires_at,
+    scopes: spotify.scopes,
+  };
+
+  if (tokensResult?.refreshed) {
+    record = (await getRecordByRsAccessToken(rsToken)) ?? record;
+  }
+
+  if (record) {
+    session.rs = {
+      access_token: record.rs_access_token,
+      refresh_token: record.rs_refresh_token,
+    };
+  } else if (!session.rs) {
+    session.rs = {
+      access_token: rsToken,
+      refresh_token: persisted?.rs_refresh_token ?? '',
+    };
+  }
+
+  await storeSessionRecord(sessionId, {
+    rs_access_token: session.rs?.access_token ?? record?.rs_access_token ?? rsToken,
+    rs_refresh_token:
+      session.rs?.refresh_token ??
+      record?.rs_refresh_token ??
+      persisted?.rs_refresh_token,
+    spotify: session.spotify ?? null,
+    created_at: persisted?.created_at ?? Date.now(),
+  });
+}

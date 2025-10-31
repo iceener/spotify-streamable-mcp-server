@@ -1,13 +1,12 @@
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import type { SpotifyApi } from '@spotify/web-api-ts-sdk';
 import { config } from '../config/env.ts';
 import { toolsMetadata } from '../config/metadata.ts';
-import { getUserBearer } from '../core/auth.ts';
 import {
   type SpotifyControlInput,
   SpotifyControlInputSchema,
 } from '../schemas/inputs.ts';
 import { SpotifyControlBatchOutput } from '../schemas/outputs.ts';
-import { createHttpClient } from '../services/http-client.ts';
 import {
   next as apiNext,
   pause as apiPause,
@@ -23,20 +22,10 @@ import {
   getPlayerState,
   listDevices,
 } from '../services/spotify/player.ts';
+import { getSpotifyUserClient } from '../services/spotify/sdk.ts';
 import type { ErrorCode } from '../utils/http-result.ts';
 import { logger } from '../utils/logger.ts';
-import { apiBase } from '../utils/spotify.ts';
 import { validateDev } from '../utils/validate.ts';
-
-const http = createHttpClient({
-  baseHeaders: {
-    'Content-Type': 'application/json',
-    'User-Agent': `mcp-spotify/${config.MCP_VERSION}`,
-  },
-  rateLimit: { rps: 5, burst: 10 },
-  timeout: 20000,
-  retries: 1,
-});
 
 export const spotifyControlTool = {
   name: 'spotify_control',
@@ -46,21 +35,19 @@ export const spotifyControlTool = {
 
   handler: async (
     args: SpotifyControlInput,
-    signal?: AbortSignal,
+    _signal?: AbortSignal,
   ): Promise<CallToolResult> => {
     try {
       const parsed = SpotifyControlInputSchema.parse(args);
-      const token = await getUserBearer();
-      if (!token) {
+      const client = await getSpotifyUserClient();
+      if (!client) {
         return toolError('Not signed in. Please authenticate.', 'unauthorized');
       }
-      const headers = { Authorization: `Bearer ${token}` };
-      const baseUrl = apiBase(config.SPOTIFY_API_URL);
 
       const runOp = (
         operation: SpotifyControlInput['operations'][number],
         index: number,
-      ) => executeOperation({ operation, index, headers, baseUrl, signal });
+      ) => executeOperation({ operation, index, client });
 
       const results = parsed.parallel
         ? await Promise.all(parsed.operations.map(runOp))
@@ -87,6 +74,24 @@ export const spotifyControlTool = {
       if (failedCount > 0) {
         const failedActions = failed.map((r) => r.action);
         summary += ` Failed (${failedCount}): ${failedActions.join(', ')}.`;
+        const failureDetails = failed
+          .map((result) => {
+            const detailParts: string[] = [result.action];
+            if (result.code) {
+              detailParts.push(`[${result.code}]`);
+            }
+            if (result.error) {
+              detailParts.push(result.error);
+            }
+            if (result.note) {
+              detailParts.push(result.note);
+            }
+            return detailParts.join(' — ');
+          })
+          .filter((text) => text.trim().length > 0);
+        if (failureDetails.length > 0) {
+          summary += ` Details: ${failureDetails.join(' | ')}`;
+        }
       }
 
       try {
@@ -105,8 +110,8 @@ export const spotifyControlTool = {
 
         // Initial query for player state and current track
         let [player, current] = await Promise.all([
-          getPlayerState(http, baseUrl, headers, signal),
-          getCurrentlyPlaying(http, baseUrl, headers, signal).catch(() => null),
+          getPlayerState(client),
+          getCurrentlyPlaying(client).catch(() => null),
         ]);
 
         // If we had successful play operations, wait and re-query to ensure track has changed
@@ -116,8 +121,8 @@ export const spotifyControlTool = {
           // Re-query current track after delay
           try {
             const [updatedPlayer, updatedCurrent] = await Promise.all([
-              getPlayerState(http, baseUrl, headers, signal),
-              getCurrentlyPlaying(http, baseUrl, headers, signal).catch(() => null),
+              getPlayerState(client),
+              getCurrentlyPlaying(client).catch(() => null),
             ]);
             player = updatedPlayer;
             current = updatedCurrent;
@@ -140,7 +145,7 @@ export const spotifyControlTool = {
 
         if (player?.device?.id) {
           try {
-            const devices = await listDevices(http, baseUrl, headers, signal);
+            const devices = await listDevices(client);
             const active = devices?.devices?.find((d) => d?.id === player.device?.id);
             if (active) {
               deviceName = (active.name ?? undefined) as string | undefined;
@@ -162,17 +167,13 @@ export const spotifyControlTool = {
                   : kind === 'album'
                     ? `albums/${id}`
                     : `artists/${id}`;
-              const resp = await http(new URL(endpoint, baseUrl).toString(), {
-                headers,
-                signal,
-              });
-              if (resp.ok) {
-                const j = await resp.json();
-                const nm = (
-                  j && typeof j === 'object'
-                    ? (j as Record<string, unknown>).name
-                    : undefined
-                ) as string | undefined;
+              const contextResponse = await client
+                .makeRequest<unknown>('GET', endpoint)
+                .catch(() => null);
+              if (contextResponse && typeof contextResponse === 'object') {
+                const nm = (contextResponse as Record<string, unknown>).name as
+                  | string
+                  | undefined;
                 if (nm) {
                   contextName = nm;
                 }
@@ -300,17 +301,13 @@ export const spotifyControlTool = {
 type OperationDeps = {
   operation: SpotifyControlInput['operations'][number];
   index: number;
-  headers: { Authorization: string };
-  baseUrl: string;
-  signal?: AbortSignal;
+  client: SpotifyApi;
 };
 
 async function executeOperation({
   operation,
   index,
-  headers,
-  baseUrl,
-  signal,
+  client,
 }: OperationDeps): Promise<SpotifyControlBatchOutput['results'][number]> {
   try {
     switch (operation.action) {
@@ -324,49 +321,25 @@ async function executeOperation({
               "Provide either 'context_uri' (optionally with 'offset') or 'uris', not both.",
           };
         }
-        await apiPlay(
-          http,
-          baseUrl,
-          headers,
-          {
-            device_id: operation.device_id,
-            context_uri: operation.context_uri,
-            uris: operation.uris,
-            offset: operation.offset,
-            position_ms: operation.position_ms,
-          },
-          signal,
-        );
+        await apiPlay(client, {
+          device_id: operation.device_id,
+          context_uri: operation.context_uri,
+          uris: operation.uris,
+          offset: operation.offset,
+          position_ms: operation.position_ms,
+        });
         return { index, action: 'play', ok: true };
       }
       case 'pause': {
-        await apiPause(
-          http,
-          baseUrl,
-          headers,
-          { device_id: operation.device_id },
-          signal,
-        );
+        await apiPause(client, { device_id: operation.device_id });
         return { index, action: 'pause', ok: true };
       }
       case 'next': {
-        await apiNext(
-          http,
-          baseUrl,
-          headers,
-          { device_id: operation.device_id },
-          signal,
-        );
+        await apiNext(client, { device_id: operation.device_id });
         return { index, action: 'next', ok: true };
       }
       case 'previous': {
-        await apiPrevious(
-          http,
-          baseUrl,
-          headers,
-          { device_id: operation.device_id },
-          signal,
-        );
+        await apiPrevious(client, { device_id: operation.device_id });
         return { index, action: 'previous', ok: true };
       }
       case 'seek': {
@@ -378,14 +351,9 @@ async function executeOperation({
             error: 'position_ms is required for seek',
           };
         }
-        await apiSeek(
-          http,
-          baseUrl,
-          headers,
-          operation.position_ms,
-          { device_id: operation.device_id },
-          signal,
-        );
+        await apiSeek(client, operation.position_ms, {
+          device_id: operation.device_id,
+        });
         return { index, action: 'seek', ok: true };
       }
       case 'shuffle': {
@@ -397,14 +365,9 @@ async function executeOperation({
             error: 'shuffle is required for shuffle',
           };
         }
-        await apiShuffle(
-          http,
-          baseUrl,
-          headers,
-          operation.shuffle,
-          { device_id: operation.device_id },
-          signal,
-        );
+        await apiShuffle(client, operation.shuffle, {
+          device_id: operation.device_id,
+        });
         return { index, action: 'shuffle', ok: true };
       }
       case 'repeat': {
@@ -416,14 +379,9 @@ async function executeOperation({
             error: 'repeat is required for repeat',
           };
         }
-        await apiRepeat(
-          http,
-          baseUrl,
-          headers,
-          operation.repeat,
-          { device_id: operation.device_id },
-          signal,
-        );
+        await apiRepeat(client, operation.repeat, {
+          device_id: operation.device_id,
+        });
         return { index, action: 'repeat', ok: true };
       }
       case 'volume': {
@@ -435,14 +393,9 @@ async function executeOperation({
             error: 'volume_percent is required for volume',
           };
         }
-        await apiVolume(
-          http,
-          baseUrl,
-          headers,
-          operation.volume_percent,
-          { device_id: operation.device_id },
-          signal,
-        );
+        await apiVolume(client, operation.volume_percent, {
+          device_id: operation.device_id,
+        });
         return { index, action: 'volume', ok: true };
       }
       case 'transfer': {
@@ -457,7 +410,7 @@ async function executeOperation({
         let fromDeviceId: string | undefined;
         let fromDeviceName: string | undefined;
         try {
-          const devices = await listDevices(http, baseUrl, headers, signal);
+          const devices = await listDevices(client);
           const active = devices?.devices?.find((d) => d?.is_active);
           if (active) {
             fromDeviceId = active.id ?? undefined;
@@ -465,16 +418,13 @@ async function executeOperation({
           }
         } catch {}
         await apiTransfer(
-          http,
-          baseUrl,
-          headers,
+          client,
           operation.device_id,
           operation.transfer_play ?? false,
-          signal,
         );
         let toDeviceName: string | undefined;
         try {
-          const devices = await listDevices(http, baseUrl, headers, signal);
+          const devices = await listDevices(client);
           const target = devices?.devices?.find((d) => d?.id === operation.device_id);
           if (target) {
             toDeviceName = (target.name ?? undefined) as string | undefined;
@@ -499,14 +449,9 @@ async function executeOperation({
             error: 'queue_uri is required for queue',
           };
         }
-        await apiQueue(
-          http,
-          baseUrl,
-          headers,
-          operation.queue_uri,
-          { device_id: operation.device_id },
-          signal,
-        );
+        await apiQueue(client, operation.queue_uri, {
+          device_id: operation.device_id,
+        });
         return { index, action: 'queue', ok: true };
       }
       default:

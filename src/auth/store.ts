@@ -1,6 +1,9 @@
 // Worker-safe token and transaction store with optional KV and encryption
 // Falls back to in-memory maps when KV is unavailable
 
+import { decryptString, encryptString } from '../utils/crypto.ts';
+import { getEnv, setEnv } from '../utils/env.ts';
+
 export type SpotifyUserTokens = {
   access_token: string;
   refresh_token?: string;
@@ -16,9 +19,8 @@ type Txn = {
   spotify?: SpotifyUserTokens;
 };
 
-let ENV: Record<string, unknown> | undefined;
 export function setAuthStoreEnv(env: Record<string, unknown>): void {
-  ENV = env;
+  setEnv(env);
 }
 
 // In-memory fallback (dev)
@@ -41,6 +43,16 @@ const memRsByRefresh = new Map<
   }
 >();
 
+export type SessionRecord = {
+  rs_access_token?: string;
+  rs_refresh_token?: string;
+  spotify?: SpotifyUserTokens | null;
+  created_at: number;
+};
+
+const memSessions = new Map<string, SessionRecord>();
+const SESSION_TTL_SECONDS = 24 * 60 * 60;
+
 // Cloudflare Workers KV type declaration (for type-checking without runtime import)
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 type KVNamespace = {
@@ -53,8 +65,11 @@ type KVNamespace = {
   delete(key: string): Promise<void>;
 };
 
+const SESSION_KEY_PREFIX = 'session:';
+
 function getKV(): KVNamespace | undefined {
-  const ns = (ENV as unknown as { TOKENS?: KVNamespace })?.TOKENS;
+  const env = getEnv();
+  const ns = (env as unknown as { TOKENS?: KVNamespace })?.TOKENS;
   return ns;
 }
 
@@ -77,81 +92,6 @@ function fromJson<T>(value: string | null): T | null {
   }
 }
 
-// --- Optional application-layer encryption (AES-GCM via TOKENS_ENC_KEY) ---
-function b64urlEncode(bytes: Uint8Array): string {
-  let s = '';
-  for (const b of bytes) {
-    s += String.fromCharCode(b);
-  }
-  const b64 = btoa(s);
-  return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
-}
-
-function b64urlDecode(data: string): Uint8Array {
-  const padded = data.replace(/-/g, '+').replace(/_/g, '/');
-  const bin = atob(padded);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) {
-    out[i] = bin.charCodeAt(i);
-  }
-  return out;
-}
-
-async function getCryptoKey(): Promise<CryptoKey | undefined> {
-  try {
-    const secret =
-      (ENV as unknown as { TOKENS_ENC_KEY?: string })?.TOKENS_ENC_KEY ||
-      ((globalThis as unknown as { process?: { env?: Record<string, unknown> } })
-        ?.process?.env?.TOKENS_ENC_KEY as string | undefined);
-    if (!secret) {
-      return undefined;
-    }
-    const raw = b64urlDecode(String(secret));
-    return await crypto.subtle.importKey('raw', raw, { name: 'AES-GCM' }, false, [
-      'encrypt',
-      'decrypt',
-    ]);
-  } catch {
-    return undefined;
-  }
-}
-
-async function encryptString(plain: string): Promise<string> {
-  const key = await getCryptoKey();
-  if (!key) {
-    return plain; // no-op without configured key
-  }
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const enc = new TextEncoder().encode(plain);
-  const ctBuf = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc);
-  const ct = b64urlEncode(new Uint8Array(ctBuf));
-  const ivb64 = b64urlEncode(iv);
-  return JSON.stringify({ alg: 'A256GCM', iv: ivb64, ct });
-}
-
-async function decryptString(stored: string): Promise<string> {
-  try {
-    const obj = JSON.parse(stored) as {
-      alg?: string;
-      iv?: string;
-      ct?: string;
-    };
-    if (!obj || obj.alg !== 'A256GCM' || !obj.iv || !obj.ct) {
-      return stored;
-    }
-    const key = await getCryptoKey();
-    if (!key) {
-      return stored;
-    }
-    const iv = b64urlDecode(obj.iv);
-    const ct = b64urlDecode(obj.ct);
-    const ptBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
-    return new TextDecoder().decode(ptBuf);
-  } catch {
-    return stored;
-  }
-}
-
 async function kvPutJson(
   key: string,
   value: unknown,
@@ -160,6 +100,39 @@ async function kvPutJson(
   const kv = getKV();
   const raw = await encryptString(toJson(value));
   await kv?.put(key, raw, options);
+}
+
+async function kvGetSession(key: string): Promise<SessionRecord | null> {
+  const kv = getKV();
+  if (!kv) {
+    return memSessions.get(key) ?? null;
+  }
+  const raw = await kv.get(`${SESSION_KEY_PREFIX}${key}`);
+  if (!raw) {
+    return null;
+  }
+  const data = await decryptString(raw);
+  return fromJson<SessionRecord>(data);
+}
+
+async function kvPutSession(key: string, value: SessionRecord): Promise<void> {
+  const kv = getKV();
+  if (!kv) {
+    memSessions.set(key, value);
+    return;
+  }
+  const ttlSeconds = SESSION_TTL_SECONDS;
+  await kvPutJson(`${SESSION_KEY_PREFIX}${key}`, value, {
+    expiration: ttl(ttlSeconds),
+  });
+}
+
+async function kvDeleteSession(key: string): Promise<void> {
+  const kv = getKV();
+  if (kv) {
+    await kv.delete(`${SESSION_KEY_PREFIX}${key}`);
+  }
+  memSessions.delete(key);
 }
 
 async function kvGetJson<T>(key: string): Promise<T | null> {
@@ -355,4 +328,135 @@ export async function getSpotifyTokensByRsAccessToken(
   }
   const mem = memRsByAccess.get(rsAccessToken);
   return mem?.spotify ?? null;
+}
+
+export async function refreshSpotifyTokensByRsAccessToken(
+  rsAccessToken: string,
+  options: {
+    signal?: AbortSignal;
+    newRsAccessToken?: string;
+  } = {},
+): Promise<{
+  rs_access_token: string;
+  rs_refresh_token: string;
+  spotify: SpotifyUserTokens;
+} | null> {
+  const record = await getRecordByRsAccessToken(rsAccessToken);
+  if (!record?.spotify.refresh_token) {
+    return null;
+  }
+
+  // Dynamically import oauth.ts to reuse refresh logic (avoids circular dependency)
+  const { refreshSpotifyTokens } = await import('../services/spotify/oauth.ts');
+
+  try {
+    const refreshed = await refreshSpotifyTokens({
+      refreshToken: record.spotify.refresh_token,
+      signal: options.signal,
+    });
+
+    const expiresIn = Number(refreshed.expires_in ?? 3600);
+    const scopesArray = refreshed.scope?.split(' ').filter(Boolean);
+
+    const spotify: SpotifyUserTokens = {
+      access_token: refreshed.access_token?.trim() || '',
+      refresh_token: refreshed.refresh_token?.trim() || record.spotify.refresh_token,
+      expires_at: Date.now() + expiresIn * 1000,
+      scopes: scopesArray || record.spotify.scopes,
+    };
+
+    if (!spotify.access_token) {
+      return null;
+    }
+
+    const updated = await updateSpotifyTokensByRsRefreshToken(
+      record.rs_refresh_token,
+      spotify,
+      options.newRsAccessToken || rsAccessToken,
+    );
+
+    return (
+      updated || {
+        rs_access_token: options.newRsAccessToken || rsAccessToken,
+        rs_refresh_token: record.rs_refresh_token,
+        spotify,
+      }
+    );
+  } catch {
+    return null;
+  }
+}
+
+export async function getSpotifyTokensWithRefreshByRsAccessToken(
+  rsAccessToken: string,
+  options: { signal?: AbortSignal; refreshWindowMs?: number } = {},
+): Promise<{ tokens: SpotifyUserTokens; refreshed: boolean } | null> {
+  const record = await getRecordByRsAccessToken(rsAccessToken);
+  if (!record) {
+    return null;
+  }
+  const tokens = record.spotify;
+  const margin = options.refreshWindowMs ?? 30_000;
+  const expiresAt = tokens.expires_at ?? 0;
+  const shouldRefresh =
+    typeof expiresAt === 'number' && Number.isFinite(expiresAt)
+      ? expiresAt - margin <= Date.now()
+      : !tokens.access_token;
+  if (!shouldRefresh) {
+    return { tokens, refreshed: false };
+  }
+  const refreshed = await refreshSpotifyTokensByRsAccessToken(rsAccessToken, {
+    signal: options.signal,
+  });
+  if (!refreshed) {
+    return { tokens, refreshed: false };
+  }
+  return { tokens: refreshed.spotify, refreshed: true };
+}
+
+export async function getRecordByRsAccessToken(rsAccessToken?: string): Promise<{
+  rs_access_token: string;
+  rs_refresh_token: string;
+  spotify: SpotifyUserTokens;
+} | null> {
+  if (!rsAccessToken) {
+    return null;
+  }
+  const kv = getKV();
+  if (kv) {
+    const rec = await kvGetJson<{
+      rs_access_token: string;
+      rs_refresh_token: string;
+      spotify: SpotifyUserTokens;
+    }>(`rs:access:${rsAccessToken}`);
+    return rec ?? null;
+  }
+  const existing = memRsByAccess.get(rsAccessToken);
+  if (!existing) {
+    return null;
+  }
+  return existing;
+}
+
+export async function getSessionRecord(
+  sessionId: string,
+): Promise<SessionRecord | null> {
+  const kvRecord = await kvGetSession(sessionId);
+  if (kvRecord) {
+    return kvRecord;
+  }
+  return memSessions.get(sessionId) ?? null;
+}
+
+export async function storeSessionRecord(
+  sessionId: string,
+  record: SessionRecord,
+): Promise<void> {
+  memSessions.set(sessionId, record);
+  await kvPutSession(sessionId, record);
+}
+
+export async function deleteSessionRecord(sessionId: string): Promise<void> {
+  memSessions.delete(sessionId);
+  await kvDeleteSession(sessionId);
 }

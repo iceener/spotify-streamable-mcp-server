@@ -1,34 +1,22 @@
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { config } from '../config/env.ts';
 import { toolsMetadata } from '../config/metadata.ts';
-import { getUserBearer } from '../core/auth.ts';
 import { getCurrentSessionId } from '../core/context.ts';
 import {
   type SpotifyStatusInput,
   SpotifyStatusInputSchema,
 } from '../schemas/inputs.ts';
 import { SpotifyStatusOutput } from '../schemas/outputs.ts';
-import { createHttpClient } from '../services/http-client.ts';
 import {
   getCurrentlyPlaying,
   getPlayerState,
   getQueue,
   listDevices,
 } from '../services/spotify/player.ts';
+import { getSpotifyUserClient } from '../services/spotify/sdk.ts';
 import type { ErrorCode } from '../utils/http-result.ts';
 import { logger } from '../utils/logger.ts';
-import { apiBase } from '../utils/spotify.ts';
 import { validateDev } from '../utils/validate.ts';
-
-const http = createHttpClient({
-  baseHeaders: {
-    'Content-Type': 'application/json',
-    'User-Agent': `mcp-spotify/${config.MCP_VERSION}`,
-  },
-  rateLimit: { rps: 5, burst: 10 },
-  timeout: 15000,
-  retries: 1,
-});
 
 export const spotifyStatusTool = {
   name: 'player_status',
@@ -38,13 +26,13 @@ export const spotifyStatusTool = {
 
   handler: async (
     args: SpotifyStatusInput,
-    signal?: AbortSignal,
+    _signal?: AbortSignal,
   ): Promise<CallToolResult> => {
     try {
       const parsed = SpotifyStatusInputSchema.parse(args);
 
-      const token = await getUserBearer();
-      if (!token) {
+      const client = await getSpotifyUserClient();
+      if (!client) {
         const sessionId = getCurrentSessionId();
         logger.info('spotify_status', {
           message: 'Missing user token',
@@ -56,31 +44,29 @@ export const spotifyStatusTool = {
       const wantedData = new Set(
         parsed.include ?? ['player', 'devices', 'current_track'],
       );
-      const headers = { Authorization: `Bearer ${token}` };
-      const base = apiBase(config.SPOTIFY_API_URL);
 
       const requests: Array<Promise<unknown>> = [];
       const requestKeys: string[] = [];
 
       if (wantedData.has('player')) {
         requestKeys.push('player');
-        requests.push(getPlayerState(http, base, headers, signal));
+        requests.push(getPlayerState(client));
       }
       if (wantedData.has('devices')) {
         requestKeys.push('devices');
-        requests.push(listDevices(http, base, headers, signal));
+        requests.push(listDevices(client));
       }
       if (wantedData.has('queue')) {
         requestKeys.push('queue');
-        requests.push(getQueue(http, base, headers, signal));
+        requests.push(getQueue(client));
       }
       if (wantedData.has('current_track')) {
         requestKeys.push('current_track');
-        requests.push(getCurrentlyPlaying(http, base, headers, signal));
+        requests.push(getCurrentlyPlaying(client));
       }
       if (wantedData.has('current_track') && !requestKeys.includes('player')) {
         requestKeys.push('player');
-        requests.push(getPlayerState(http, base, headers, signal));
+        requests.push(getPlayerState(client));
       }
 
       const results = await Promise.all(requests);
@@ -194,7 +180,7 @@ export const spotifyStatusTool = {
       )?.name;
       if (!activeDeviceName && output.player?.device_id && !devicesRequested) {
         try {
-          const dv = await listDevices(http, base, headers, signal);
+          const dv = await listDevices(client);
           const devicesList = Array.isArray(dv?.devices)
             ? dv.devices.map((device) => ({
                 id: device.id ?? null,

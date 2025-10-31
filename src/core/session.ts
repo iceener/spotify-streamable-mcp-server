@@ -9,7 +9,7 @@ export type Session = {
     refresh_token: string;
   };
   spotify?: {
-    access_token?: string;
+    access_token: string;
     refresh_token?: string;
     expires_at?: number; // ms epoch
     scopes?: string[];

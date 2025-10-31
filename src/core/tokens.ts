@@ -145,6 +145,13 @@ export function getRecordByRsRefreshToken(
   return rsRefreshToRecord.get(rsRefreshToken) ?? null;
 }
 
+export function getRecordByRsAccessToken(rsAccessToken?: string): RsTokenRecord | null {
+  if (!rsAccessToken) {
+    return null;
+  }
+  return rsAccessToRecord.get(rsAccessToken) ?? null;
+}
+
 export async function refreshSpotifyTokensForRsRefreshToken(
   rsRefreshToken: string,
   options: { signal?: AbortSignal; newRsAccessToken?: string } = {},
@@ -188,6 +195,59 @@ export async function refreshSpotifyTokensForRsRefreshToken(
     });
     return null;
   }
+}
+
+export async function refreshSpotifyTokensForRsAccessToken(
+  rsAccessToken: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<RefreshResult | null> {
+  const record = getRecordByRsAccessToken(rsAccessToken);
+  if (!record) {
+    await logger.warning('tokens', {
+      message: 'refreshSpotifyTokensForRsAccessToken: record not found',
+      rsAccessToken,
+    });
+    return null;
+  }
+  return await refreshSpotifyTokensForRsRefreshToken(record.rs_refresh_token, {
+    signal: options.signal,
+    newRsAccessToken: rsAccessToken,
+  });
+}
+
+export async function getSpotifyTokensWithRefreshByRsAccessToken(
+  rsAccessToken: string,
+  options: { signal?: AbortSignal; refreshWindowMs?: number } = {},
+): Promise<{ tokens: SpotifyUserTokens; refreshed: boolean } | null> {
+  const record = getRecordByRsAccessToken(rsAccessToken);
+  if (!record) {
+    await logger.warning('tokens', {
+      message: 'getSpotifyTokensWithRefreshByRsAccessToken: record not found',
+      rsAccessToken,
+    });
+    return null;
+  }
+
+  const margin = options.refreshWindowMs ?? 30_000;
+  const expiresAt = record.spotify.expires_at;
+  const now = Date.now();
+  const shouldRefresh =
+    typeof expiresAt === 'number' && Number.isFinite(expiresAt)
+      ? expiresAt - margin <= now
+      : false;
+
+  if (!shouldRefresh) {
+    return { tokens: record.spotify, refreshed: false };
+  }
+
+  const refreshed = await refreshSpotifyTokensForRsAccessToken(rsAccessToken, {
+    signal: options.signal,
+  });
+  if (!refreshed) {
+    return { tokens: record.spotify, refreshed: false };
+  }
+
+  return { tokens: refreshed.spotify, refreshed: true };
 }
 
 export function updateSpotifyTokensByRsRefreshToken(

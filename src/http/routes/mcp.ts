@@ -7,7 +7,10 @@ import { Hono } from 'hono';
 import { validateSpotifyToken } from '../../core/auth.ts';
 import { runWithRequestContext } from '../../core/context.ts';
 import { ensureSession } from '../../core/session.ts';
-import { getSpotifyTokensByRsToken } from '../../core/tokens.ts';
+import {
+  getSpotifyTokensByRsToken,
+  refreshSpotifyTokensForRsAccessToken,
+} from '../../core/tokens.ts';
 import { logger } from '../../utils/logger.ts';
 
 export function buildMcpRoutes(params: {
@@ -65,23 +68,56 @@ export function buildMcpRoutes(params: {
               rsTokenLength: rsToken.length,
             });
 
-            const spotify = getSpotifyTokensByRsToken(rsToken);
-            if (spotify) {
+            const spotifyRecord = getSpotifyTokensByRsToken(rsToken);
+            if (spotifyRecord) {
               void logger.info('auth', {
                 message: 'Found Spotify tokens for RS token, validating access token',
                 sessionId: plannedSid,
-                hasAccessToken: !!spotify.access_token,
-                hasRefreshToken: !!spotify.refresh_token,
-                expiresAt: spotify.expires_at
-                  ? new Date(spotify.expires_at).toISOString()
+                hasAccessToken: !!spotifyRecord.access_token,
+                hasRefreshToken: !!spotifyRecord.refresh_token,
+                expiresAt: spotifyRecord.expires_at
+                  ? new Date(spotifyRecord.expires_at).toISOString()
                   : null,
-                scopes: spotify.scopes,
+                scopes: spotifyRecord.scopes,
               });
-
-              const isValid = await validateSpotifyToken(spotify.access_token);
-              if (!isValid) {
+              const initialValid = await validateSpotifyToken(
+                spotifyRecord.access_token,
+              );
+              let spotify = spotifyRecord;
+              if (!initialValid) {
                 void logger.warning('auth', {
-                  message: 'Invalid Spotify token provided - rejecting session',
+                  message:
+                    'Spotify access token invalid, attempting refresh via RS flow',
+                  sessionId: plannedSid,
+                  tokenExpired: Date.now() > (spotifyRecord.expires_at || 0),
+                });
+                const refreshed = await refreshSpotifyTokensForRsAccessToken(rsToken, {
+                  signal: AbortSignal.timeout(10_000),
+                });
+                if (!refreshed) {
+                  void logger.warning('auth', {
+                    message: 'RS-linked refresh failed, rejecting session',
+                    sessionId: plannedSid,
+                  });
+                  return c.json(
+                    {
+                      jsonrpc: '2.0',
+                      error: {
+                        code: -32001,
+                        message: 'Invalid or expired Spotify credentials provided',
+                      },
+                      id: null,
+                    },
+                    401,
+                  );
+                }
+                spotify = refreshed.spotify;
+              }
+
+              if (!(await validateSpotifyToken(spotify.access_token))) {
+                void logger.warning('auth', {
+                  message:
+                    'Spotify token still invalid after refresh - rejecting session',
                   sessionId: plannedSid,
                   tokenExpired: Date.now() > (spotify.expires_at || 0),
                 });
@@ -185,9 +221,16 @@ export function buildMcpRoutes(params: {
       if (!transport) {
         return c.text('Transport unavailable', 500);
       }
-      await runWithRequestContext({ sessionId }, async () => {
-        await transport.handleRequest(req, res, body);
-      });
+      const bearerHeader =
+        (req.headers.authorization as string | undefined) ?? undefined;
+      const bearerMatch = bearerHeader?.match(/\s*Bearer\s+(.+)$/i);
+      const rsToken = bearerMatch?.[1];
+      await runWithRequestContext(
+        rsToken ? { sessionId, rsToken } : { sessionId },
+        async () => {
+          await transport.handleRequest(req, res, body);
+        },
+      );
 
       res.on('close', () => {});
       return toFetchResponse(res);
@@ -244,9 +287,18 @@ export function buildMcpRoutes(params: {
         });
         return c.text('Invalid session', 404);
       }
-      await runWithRequestContext({ sessionId: sessionIdHeader }, async () => {
-        await transport.handleRequest(req, res);
-      });
+      const bearerHeader =
+        (req.headers.authorization as string | undefined) ?? undefined;
+      const bearerMatch = bearerHeader?.match(/\s*Bearer\s+(.+)$/i);
+      const rsToken = bearerMatch?.[1];
+      await runWithRequestContext(
+        rsToken
+          ? { sessionId: sessionIdHeader, rsToken }
+          : { sessionId: sessionIdHeader },
+        async () => {
+          await transport.handleRequest(req, res);
+        },
+      );
       return toFetchResponse(res);
     } catch (_error) {
       void logger.error('mcp_request', {
@@ -304,9 +356,18 @@ export function buildMcpRoutes(params: {
         });
         return c.text('Invalid session', 404);
       }
-      await runWithRequestContext({ sessionId: sessionIdHeader }, async () => {
-        await transport.handleRequest(req, res);
-      });
+      const bearerHeader =
+        (req.headers.authorization as string | undefined) ?? undefined;
+      const bearerMatch = bearerHeader?.match(/\s*Bearer\s+(.+)$/i);
+      const rsToken = bearerMatch?.[1];
+      await runWithRequestContext(
+        rsToken
+          ? { sessionId: sessionIdHeader, rsToken }
+          : { sessionId: sessionIdHeader },
+        async () => {
+          await transport.handleRequest(req, res);
+        },
+      );
       transports.delete(sessionIdHeader);
       transport.close();
 

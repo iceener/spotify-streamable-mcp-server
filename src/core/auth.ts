@@ -3,9 +3,18 @@ import { createHttpClient } from '../services/http-client.ts';
 import { refreshSpotifyTokens } from '../services/spotify/oauth.ts';
 import { logger } from '../utils/logger.ts';
 import { apiBase } from '../utils/spotify.ts';
-import { getCurrentSessionId, getCurrentSpotifyAccessToken } from './context.ts';
-import { getSession } from './session.ts';
-import { updateSpotifyTokensByRsRefreshToken } from './tokens.ts';
+import {
+  getCurrentRsToken,
+  getCurrentSessionId,
+  getCurrentSpotifyAccessToken,
+} from './context.ts';
+import { ensureSession, getSession } from './session.ts';
+import {
+  getRecordByRsAccessToken,
+  getSpotifyTokensByRsToken,
+  getSpotifyTokensWithRefreshByRsAccessToken,
+  updateSpotifyTokensByRsRefreshToken,
+} from './tokens.ts';
 
 const http = createHttpClient({
   baseHeaders: {
@@ -65,19 +74,47 @@ export async function getUserBearer(): Promise<string | null> {
   });
 
   if (!sessionId) {
+    const rsFromContext = getCurrentRsToken();
+    if (rsFromContext) {
+      void logger.info('auth', {
+        message:
+          'getUserBearer: No session ID available but RS token present, attempting recovery',
+      });
+    }
     void logger.warning('auth', {
       message: 'getUserBearer: No session ID available',
     });
     return null;
   }
 
-  const session = getSession(sessionId);
+  let session = getSession(sessionId);
   void logger.info('auth', {
     message: 'getUserBearer: Retrieved session',
     sessionExists: !!session,
     sessionAge: session ? Date.now() - session.createdAt : null,
     sessionHasSpotify: !!session?.spotify,
   });
+
+  if (!session) {
+    const rsToken = getCurrentRsToken();
+    if (rsToken) {
+      void logger.warning('auth', {
+        message: 'getUserBearer: Session missing, attempting to restore from RS token',
+        sessionId,
+      });
+      const restored = await restoreSessionFromRsToken({ sessionId, rsToken });
+      if (restored) {
+        session = restored.session;
+      } else {
+        void logger.warning('auth', {
+          message:
+            'getUserBearer: Failed to restore session from RS token; returning null',
+          sessionId,
+        });
+        return null;
+      }
+    }
+  }
 
   const token = session?.spotify?.access_token ?? null;
   const expiresAt = session?.spotify?.expires_at ?? 0;
@@ -180,4 +217,65 @@ export async function getUserBearer(): Promise<string | null> {
   });
 
   return token ?? null;
+}
+
+async function restoreSessionFromRsToken(params: {
+  sessionId: string;
+  rsToken: string;
+}): Promise<{ session: ReturnType<typeof ensureSession> } | null> {
+  const { sessionId, rsToken } = params;
+  try {
+    const restored = await getSpotifyTokensWithRefreshByRsAccessToken(rsToken, {
+      signal: AbortSignal.timeout(10_000),
+      refreshWindowMs: 60_000,
+    });
+    let tokens = restored?.tokens ?? null;
+    const refreshed = restored?.refreshed ?? false;
+
+    if (!tokens) {
+      tokens = getSpotifyTokensByRsToken(rsToken);
+    }
+
+    if (!tokens) {
+      void logger.warning('auth', {
+        message: 'restoreSessionFromRsToken: No Spotify tokens linked to RS token',
+        sessionId,
+      });
+      return null;
+    }
+
+    const session = ensureSession(sessionId);
+    session.spotify = {
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
+      expires_at: tokens.expires_at,
+      scopes: tokens.scopes,
+    };
+    session.rs = {
+      access_token: rsToken,
+      refresh_token: getRecordByRsAccessToken(rsToken)?.rs_refresh_token ?? '',
+    };
+
+    if (refreshed) {
+      const rsRefresh = session.rs?.refresh_token;
+      if (rsRefresh) {
+        updateSpotifyTokensByRsRefreshToken(rsRefresh, tokens, rsToken);
+      }
+    }
+
+    void logger.info('auth', {
+      message: 'restoreSessionFromRsToken: Session restored',
+      sessionId,
+      refreshed,
+    });
+
+    return { session };
+  } catch (error) {
+    void logger.error('auth', {
+      message: 'restoreSessionFromRsToken: Error restoring session',
+      sessionId,
+      error: (error as Error).message,
+    });
+    return null;
+  }
 }

@@ -3,6 +3,7 @@ import {
   SpotifyTokenResponseCodec,
   type SpotifyTokenResponseCodecType,
 } from '../../types/spotify.codecs.ts';
+import { toBase64 } from '../../utils/crypto.ts';
 
 export class SpotifyOAuthError extends Error {
   status?: number;
@@ -38,9 +39,7 @@ export async function refreshSpotifyTokens(
     refresh_token: refreshToken,
   }).toString();
 
-  const basic = Buffer.from(
-    `${config.SPOTIFY_CLIENT_ID}:${config.SPOTIFY_CLIENT_SECRET}`,
-  ).toString('base64');
+  const basic = toBase64(`${config.SPOTIFY_CLIENT_ID}:${config.SPOTIFY_CLIENT_SECRET}`);
 
   const response = await fetch(tokenUrl, {
     method: 'POST',

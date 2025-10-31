@@ -6,38 +6,9 @@ import {
   SpotifySearchInputSchema,
 } from '../schemas/inputs.ts';
 import { SpotifySearchBatchOutput } from '../schemas/outputs.ts';
-import { createHttpClient } from '../services/http-client.ts';
 import { searchCatalog } from '../services/spotify/catalog.ts';
-import { createClientCredentialsAuth } from '../services/spotify/client-credentials-auth.ts';
 import { logger } from '../utils/logger.ts';
 import { validateDev } from '../utils/validate.ts';
-
-const accountsHttp = createHttpClient({
-  baseHeaders: {
-    'Content-Type': 'application/x-www-form-urlencoded',
-    'User-Agent': `mcp-spotify/${config.MCP_VERSION}`,
-  },
-  rateLimit: { rps: 2, burst: 4 },
-  timeout: 15000,
-  retries: 1,
-});
-
-const apiHttp = createHttpClient({
-  baseHeaders: {
-    'Content-Type': 'application/json',
-    'User-Agent': `mcp-spotify/${config.MCP_VERSION}`,
-  },
-  rateLimit: { rps: 5, burst: 10 },
-  timeout: 20000,
-  retries: 2,
-});
-
-const appAuth = createClientCredentialsAuth({
-  accountsHttp,
-  accountsUrl: config.SPOTIFY_ACCOUNTS_URL,
-  clientId: config.SPOTIFY_CLIENT_ID,
-  clientSecret: config.SPOTIFY_CLIENT_SECRET,
-});
 
 export const spotifySearchTool = {
   name: 'search_catalog',
@@ -62,9 +33,6 @@ export const spotifySearchTool = {
       }> = await Promise.all(
         parsed.queries.map(async (query, inputIndex) => {
           const result = await searchCatalog(
-            apiHttp,
-            config.SPOTIFY_API_URL,
-            appAuth.getAppToken,
             {
               q: query,
               types: parsed.types,

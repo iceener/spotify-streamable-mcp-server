@@ -1,93 +1,50 @@
+import type { SpotifyApi } from '@spotify/web-api-ts-sdk';
 import {
   CurrentlyPlayingCodec,
   DevicesResponseCodec,
   PlayerStateCodec,
   QueueResponseCodec,
 } from '../../types/spotify.codecs.ts';
-import { expectOkOr204 } from '../../utils/http-result.ts';
-import { apiBase } from '../../utils/spotify.ts';
-import type { HttpClient } from '../http-client.ts';
-
-export type AuthHeaders = { Authorization: string };
-
-function baseUrlWithSlash(baseUrl: string): string {
-  return apiBase(baseUrl);
-}
+import { mapStatusToCode } from '../../utils/http-result.ts';
 
 // Status APIs
-export async function getPlayerState(
-  http: HttpClient,
-  baseUrl: string,
-  headers: AuthHeaders,
-  signal?: AbortSignal,
-) {
-  const response = await http(
-    new URL('me/player', baseUrlWithSlash(baseUrl)).toString(),
-    {
-      headers,
-      signal,
-    },
+export async function getPlayerState(api: SpotifyApi) {
+  const result = await callWithHandling(() =>
+    api.makeRequest<unknown>('GET', 'me/player'),
   );
-  if (response.status === 204) {
+  if (result === null) {
     return null;
   }
-  await expectOkOr204(response, 'Fetch player state failed');
-  return PlayerStateCodec.parse(await response.json());
+  return PlayerStateCodec.parse(result);
 }
 
-export async function listDevices(
-  http: HttpClient,
-  baseUrl: string,
-  headers: AuthHeaders,
-  signal?: AbortSignal,
-) {
-  const response = await http(
-    new URL('me/player/devices', baseUrlWithSlash(baseUrl)).toString(),
-    { headers, signal },
+export async function listDevices(api: SpotifyApi) {
+  const result = await callWithHandling(() =>
+    api.makeRequest<unknown>('GET', 'me/player/devices'),
   );
-  await expectOkOr204(response, 'Fetch devices failed');
-  return DevicesResponseCodec.parse(await response.json());
+  return DevicesResponseCodec.parse(result);
 }
 
-export async function getQueue(
-  http: HttpClient,
-  baseUrl: string,
-  headers: AuthHeaders,
-  signal?: AbortSignal,
-) {
-  const response = await http(
-    new URL('me/player/queue', baseUrlWithSlash(baseUrl)).toString(),
-    {
-      headers,
-      signal,
-    },
+export async function getQueue(api: SpotifyApi) {
+  const result = await callWithHandling(() =>
+    api.makeRequest<unknown>('GET', 'me/player/queue'),
   );
-  await expectOkOr204(response, 'Fetch queue failed');
-  return QueueResponseCodec.parse(await response.json());
+  return QueueResponseCodec.parse(result);
 }
 
-export async function getCurrentlyPlaying(
-  http: HttpClient,
-  baseUrl: string,
-  headers: AuthHeaders,
-  signal?: AbortSignal,
-) {
-  const response = await http(
-    new URL('me/player/currently-playing', baseUrlWithSlash(baseUrl)).toString(),
-    { headers, signal },
+export async function getCurrentlyPlaying(api: SpotifyApi) {
+  const result = await callWithHandling(() =>
+    api.makeRequest<unknown>('GET', 'me/player/currently-playing'),
   );
-  if (response.status === 204) {
+  if (result === null) {
     return null;
   }
-  await expectOkOr204(response, 'Fetch current track failed');
-  return CurrentlyPlayingCodec.parse(await response.json());
+  return CurrentlyPlayingCodec.parse(result);
 }
 
 // Control APIs
 export async function play(
-  http: HttpClient,
-  baseUrl: string,
-  headers: AuthHeaders,
+  api: SpotifyApi,
   options: {
     device_id?: string;
     context_uri?: string;
@@ -95,219 +52,100 @@ export async function play(
     offset?: { position?: number; uri?: string };
     position_ms?: number;
   },
-  signal?: AbortSignal,
 ) {
-  const query = new URLSearchParams();
-  if (options.device_id) {
-    query.set('device_id', options.device_id);
-  }
-  const url = new URL('me/player/play', baseUrlWithSlash(baseUrl)).toString();
-  const fullUrl = query.toString() ? `${url}?${query.toString()}` : url;
-
-  const body: Record<string, unknown> = {};
-  if (options.context_uri) {
-    body.context_uri = options.context_uri;
-  }
-  if (!options.context_uri && options.uris && options.uris.length > 0) {
-    body.uris = options.uris;
-  }
-  if (options.offset?.position != null) {
-    body.offset = { position: options.offset.position };
-  } else if (options.offset?.uri) {
-    body.offset = { uri: options.offset.uri };
-  }
-  if (typeof options.position_ms === 'number') {
-    body.position_ms = options.position_ms;
-  }
-
-  const response = await http(fullUrl, {
-    method: 'PUT',
-    headers,
-    body: Object.keys(body).length > 0 ? JSON.stringify(body) : undefined,
-    signal,
-  });
-  await expectOkOr204(response, 'Play failed');
+  await callWithHandling(() =>
+    api.player.startResumePlayback(
+      options.device_id ?? '',
+      options.context_uri,
+      options.uris,
+      options.offset,
+      options.position_ms,
+    ),
+  );
 }
 
-export async function pause(
-  http: HttpClient,
-  baseUrl: string,
-  headers: AuthHeaders,
-  options: { device_id?: string },
-  signal?: AbortSignal,
-) {
-  const query = new URLSearchParams();
-  if (options.device_id) {
-    query.set('device_id', options.device_id);
-  }
-  const url = new URL('me/player/pause', baseUrlWithSlash(baseUrl)).toString();
-  const fullUrl = query.toString() ? `${url}?${query.toString()}` : url;
-  const response = await http(fullUrl, { method: 'PUT', headers, signal });
-  await expectOkOr204(response, 'Pause failed');
+export async function pause(api: SpotifyApi, options: { device_id?: string }) {
+  await callWithHandling(() => api.player.pausePlayback(options.device_id ?? ''));
 }
 
-export async function next(
-  http: HttpClient,
-  baseUrl: string,
-  headers: AuthHeaders,
-  options: { device_id?: string },
-  signal?: AbortSignal,
-) {
-  const query = new URLSearchParams();
-  if (options.device_id) {
-    query.set('device_id', options.device_id);
-  }
-  const url = new URL('me/player/next', baseUrlWithSlash(baseUrl)).toString();
-  const fullUrl = query.toString() ? `${url}?${query.toString()}` : url;
-  const response = await http(fullUrl, { method: 'POST', headers, signal });
-  await expectOkOr204(response, 'Skip to next failed');
+export async function next(api: SpotifyApi, options: { device_id?: string }) {
+  await callWithHandling(() => api.player.skipToNext(options.device_id ?? ''));
 }
 
-export async function previous(
-  http: HttpClient,
-  baseUrl: string,
-  headers: AuthHeaders,
-  options: { device_id?: string },
-  signal?: AbortSignal,
-) {
-  const query = new URLSearchParams();
-  if (options.device_id) {
-    query.set('device_id', options.device_id);
-  }
-  const url = new URL('me/player/previous', baseUrlWithSlash(baseUrl)).toString();
-  const fullUrl = query.toString() ? `${url}?${query.toString()}` : url;
-  const response = await http(fullUrl, { method: 'POST', headers, signal });
-  await expectOkOr204(response, 'Skip to previous failed');
+export async function previous(api: SpotifyApi, options: { device_id?: string }) {
+  await callWithHandling(() => api.player.skipToPrevious(options.device_id ?? ''));
 }
 
 export async function seek(
-  http: HttpClient,
-  baseUrl: string,
-  headers: AuthHeaders,
+  api: SpotifyApi,
   position_ms: number,
   options: { device_id?: string },
-  signal?: AbortSignal,
 ) {
-  const query = new URLSearchParams();
-  query.set('position_ms', String(position_ms));
-  if (options.device_id) {
-    query.set('device_id', options.device_id);
-  }
-  const url = new URL('me/player/seek', baseUrlWithSlash(baseUrl)).toString();
-  const response = await http(`${url}?${query.toString()}`, {
-    method: 'PUT',
-    headers,
-    signal,
-  });
-  await expectOkOr204(response, 'Seek failed');
+  await callWithHandling(() =>
+    api.player.seekToPosition(position_ms, options.device_id),
+  );
 }
 
 export async function shuffle(
-  http: HttpClient,
-  baseUrl: string,
-  headers: AuthHeaders,
+  api: SpotifyApi,
   state: boolean,
   options: { device_id?: string },
-  signal?: AbortSignal,
 ) {
-  const query = new URLSearchParams();
-  query.set('state', String(state));
-  if (options.device_id) {
-    query.set('device_id', options.device_id);
-  }
-  const url = new URL('me/player/shuffle', baseUrlWithSlash(baseUrl)).toString();
-  const response = await http(`${url}?${query.toString()}`, {
-    method: 'PUT',
-    headers,
-    signal,
-  });
-  await expectOkOr204(response, 'Set shuffle failed');
+  await callWithHandling(() =>
+    api.player.togglePlaybackShuffle(state, options.device_id),
+  );
 }
 
 export async function repeat(
-  http: HttpClient,
-  baseUrl: string,
-  headers: AuthHeaders,
+  api: SpotifyApi,
   state: 'off' | 'track' | 'context',
   options: { device_id?: string },
-  signal?: AbortSignal,
 ) {
-  const query = new URLSearchParams();
-  query.set('state', state);
-  if (options.device_id) {
-    query.set('device_id', options.device_id);
-  }
-  const url = new URL('me/player/repeat', baseUrlWithSlash(baseUrl)).toString();
-  const response = await http(`${url}?${query.toString()}`, {
-    method: 'PUT',
-    headers,
-    signal,
-  });
-  await expectOkOr204(response, 'Set repeat failed');
+  await callWithHandling(() => api.player.setRepeatMode(state, options.device_id));
 }
 
 export async function volume(
-  http: HttpClient,
-  baseUrl: string,
-  headers: AuthHeaders,
+  api: SpotifyApi,
   volume_percent: number,
   options: { device_id?: string },
-  signal?: AbortSignal,
 ) {
   const vol = Math.max(0, Math.min(100, volume_percent));
-  const query = new URLSearchParams();
-  query.set('volume_percent', String(vol));
-  if (options.device_id) {
-    query.set('device_id', options.device_id);
-  }
-  const url = new URL('me/player/volume', baseUrlWithSlash(baseUrl)).toString();
-  const response = await http(`${url}?${query.toString()}`, {
-    method: 'PUT',
-    headers,
-    signal,
-  });
-  await expectOkOr204(response, 'Set volume failed');
+  await callWithHandling(() => api.player.setPlaybackVolume(vol, options.device_id));
 }
 
 export async function transfer(
-  http: HttpClient,
-  baseUrl: string,
-  headers: AuthHeaders,
+  api: SpotifyApi,
   device_id: string,
   transfer_play = false,
-  signal?: AbortSignal,
 ) {
-  const body = JSON.stringify({ device_ids: [device_id], play: transfer_play });
-  const response = await http(
-    new URL('me/player', baseUrlWithSlash(baseUrl)).toString(),
-    {
-      method: 'PUT',
-      headers,
-      body,
-      signal,
-    },
-  );
-  await expectOkOr204(response, 'Transfer playback failed');
+  await callWithHandling(() => api.player.transferPlayback([device_id], transfer_play));
 }
 
 export async function queueUri(
-  http: HttpClient,
-  baseUrl: string,
-  headers: AuthHeaders,
+  api: SpotifyApi,
   queue_uri: string,
   options: { device_id?: string },
-  signal?: AbortSignal,
 ) {
-  const query = new URLSearchParams();
-  query.set('uri', queue_uri);
-  if (options.device_id) {
-    query.set('device_id', options.device_id);
-  }
-  const url = new URL('me/player/queue', baseUrlWithSlash(baseUrl)).toString();
-  const response = await http(`${url}?${query.toString()}`, {
-    method: 'POST',
-    headers,
-    signal,
+  await callWithHandling(() =>
+    api.player.addItemToPlaybackQueue(queue_uri, options.device_id),
+  );
+}
+
+function callWithHandling<T>(fn: () => Promise<T>): Promise<T> {
+  return fn().catch((error) => {
+    throw decorateSpotifyError(error);
   });
-  await expectOkOr204(response, 'Queue failed');
+}
+
+function decorateSpotifyError(error: unknown): Error {
+  const status = (error as { status?: number }).status;
+  if (typeof status === 'number') {
+    const code = mapStatusToCode(status);
+    const rawMessage = (error as Error).message;
+    const cleaned = rawMessage.replace(/\s*\[[^\]]+\]$/, '');
+    const err = new Error(`${cleaned} [${code}]`);
+    (err as { status?: number }).status = status;
+    return err;
+  }
+  return error instanceof Error ? error : new Error(String(error));
 }

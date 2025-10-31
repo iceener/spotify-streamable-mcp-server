@@ -1,13 +1,12 @@
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { config } from '../config/env.ts';
+import type { SpotifyApi } from '@spotify/web-api-ts-sdk';
 import { toolsMetadata } from '../config/metadata.ts';
-import { getUserBearer } from '../core/auth.ts';
 import {
   type SpotifyPlaylistInput,
   SpotifyPlaylistInputSchema,
 } from '../schemas/inputs.ts';
 import { SpotifyPlaylistOutputObject } from '../schemas/outputs.ts';
-import { createHttpClient } from '../services/http-client.ts';
+import { getSpotifyUserClient } from '../services/spotify/sdk.ts';
 import {
   MeResponseCodec,
   PlaylistDetailsResponseCodec,
@@ -16,21 +15,10 @@ import {
   SnapshotResponseCodec,
   TrackCodec,
 } from '../types/spotify.codecs.ts';
-import { type ErrorCode, expectOkOr204 } from '../utils/http-result.ts';
+import { type ErrorCode, mapStatusToCode } from '../utils/http-result.ts';
 import { logger } from '../utils/logger.ts';
 import { toPlaylistDetails, toPlaylistSummary, toSlimTrack } from '../utils/mappers.ts';
-import { apiBase } from '../utils/spotify.ts';
 import { validateDev } from '../utils/validate.ts';
-
-const http = createHttpClient({
-  baseHeaders: {
-    'Content-Type': 'application/json',
-    'User-Agent': `mcp-spotify/${config.MCP_VERSION}`,
-  },
-  rateLimit: { rps: 5, burst: 10 },
-  timeout: 20000,
-  retries: 1,
-});
 
 export const spotifyPlaylistTool = {
   name: 'spotify_playlist',
@@ -40,33 +28,32 @@ export const spotifyPlaylistTool = {
 
   handler: async (
     args: SpotifyPlaylistInput,
-    signal?: AbortSignal,
+    _signal?: AbortSignal,
   ): Promise<CallToolResult> => {
     try {
       const parsed = SpotifyPlaylistInputSchema.parse(args);
-      const token = await getUserBearer();
-      if (!token) {
+      const client = await getSpotifyUserClient();
+      if (!client) {
         return fail(
           'Not signed in. Please authenticate.',
           'unauthorized',
           parsed.action,
         );
       }
-      const headers = { Authorization: `Bearer ${token}` };
-      const base = apiBase(config.SPOTIFY_API_URL);
 
       switch (parsed.action) {
         case 'list_user': {
-          const url = new URL('me/playlists', base);
+          const params = new URLSearchParams();
           if (parsed.limit != null) {
-            url.searchParams.set('limit', String(parsed.limit));
+            params.set('limit', String(parsed.limit));
           }
           if (parsed.offset != null) {
-            url.searchParams.set('offset', String(parsed.offset));
+            params.set('offset', String(parsed.offset));
           }
-          const response = await http(url.toString(), { headers, signal });
-          await expectOkOr204(response, 'List playlists failed');
-          const json = PlaylistListResponseCodec.parse(await response.json());
+          const endpoint = buildEndpoint('me/playlists', params);
+          const json = PlaylistListResponseCodec.parse(
+            await requestSpotify<unknown>(client, 'GET', endpoint),
+          );
           const items = Array.isArray(json.items) ? json.items : [];
           const normalized = items.map(toPlaylistSummary);
           const previewCount = 20;
@@ -106,16 +93,17 @@ export const spotifyPlaylistTool = {
               args.action,
             );
           }
-          const url = new URL(`playlists/${parsed.playlist_id}`, base);
+          const params = new URLSearchParams();
           if (parsed.market) {
-            url.searchParams.set('market', parsed.market);
+            params.set('market', parsed.market);
           }
           if (parsed.fields) {
-            url.searchParams.set('fields', parsed.fields);
+            params.set('fields', parsed.fields);
           }
-          const response = await http(url.toString(), { headers, signal });
-          await expectOkOr204(response, 'Get playlist failed');
-          const json = PlaylistDetailsResponseCodec.parse(await response.json());
+          const endpoint = buildEndpoint(`playlists/${parsed.playlist_id}`, params);
+          const json = PlaylistDetailsResponseCodec.parse(
+            await requestSpotify<unknown>(client, 'GET', endpoint),
+          );
           const details = toPlaylistDetails(json);
           const jrec = json as unknown as Record<string, unknown>;
           const name = String((jrec?.name as string | undefined) ?? 'playlist');
@@ -133,25 +121,29 @@ export const spotifyPlaylistTool = {
               args.action,
             );
           }
-          const url = new URL(`playlists/${parsed.playlist_id}/tracks`, base);
+          const params = new URLSearchParams();
           if (parsed.market) {
-            url.searchParams.set('market', parsed.market);
+            params.set('market', parsed.market);
           }
           if (typeof parsed.limit === 'number') {
-            url.searchParams.set('limit', String(parsed.limit));
+            params.set('limit', String(parsed.limit));
           }
           if (typeof parsed.offset === 'number') {
-            url.searchParams.set('offset', String(parsed.offset));
+            params.set('offset', String(parsed.offset));
           }
           if (parsed.fields) {
-            url.searchParams.set('fields', parsed.fields);
+            params.set('fields', parsed.fields);
           }
           if (parsed.additional_types) {
-            url.searchParams.set('additional_types', parsed.additional_types);
+            params.set('additional_types', parsed.additional_types);
           }
-          const response = await http(url.toString(), { headers, signal });
-          await expectOkOr204(response, 'Get playlist items failed');
-          const json = PlaylistTracksResponseCodec.parse(await response.json());
+          const endpoint = buildEndpoint(
+            `playlists/${parsed.playlist_id}/tracks`,
+            params,
+          );
+          const json = PlaylistTracksResponseCodec.parse(
+            await requestSpotify<unknown>(client, 'GET', endpoint),
+          );
           const items = Array.isArray(json.items) ? json.items : [];
           const baseOffset = Number(json.offset ?? parsed.offset ?? 0) || 0;
           const playlistUri = `spotify:playlist:${parsed.playlist_id}`;
@@ -164,12 +156,13 @@ export const spotifyPlaylistTool = {
             });
           let playlistName: string | undefined;
           try {
-            const plResp = await http(
-              new URL(`playlists/${parsed.playlist_id}`, base).toString(),
-              { headers, signal },
+            const plJson = PlaylistDetailsResponseCodec.parse(
+              await requestSpotify<unknown>(
+                client,
+                'GET',
+                `playlists/${parsed.playlist_id}`,
+              ),
             );
-            await expectOkOr204(plResp, 'Get playlist failed');
-            const plJson = PlaylistDetailsResponseCodec.parse(await plResp.json());
             const plr = plJson as unknown as Record<string, unknown>;
             playlistName = String((plr?.name as string | undefined) ?? '');
           } catch {}
@@ -213,27 +206,25 @@ export const spotifyPlaylistTool = {
           );
         }
         case 'create': {
-          const meResponse = await http(new URL('me', base).toString(), {
-            headers,
-            signal,
-          });
-          await expectOkOr204(meResponse, 'Get current user failed');
-          const meData = MeResponseCodec.parse(await meResponse.json());
-          const url = new URL(`users/${meData?.id ?? ''}/playlists`, base).toString();
-          const body = JSON.stringify({
-            name: parsed.name ?? 'New Playlist',
-            description: parsed.description,
-            public: parsed.public,
-            collaborative: parsed.collaborative,
-          });
-          const response = await http(url, {
-            method: 'POST',
-            headers,
-            body,
-            signal,
-          });
-          await expectOkOr204(response, 'Create playlist failed');
-          const json = PlaylistDetailsResponseCodec.parse(await response.json());
+          const meData = MeResponseCodec.parse(
+            await requestSpotify<unknown>(client, 'GET', 'me'),
+          );
+          const userId = meData?.id?.trim();
+          if (!userId) {
+            return fail(
+              'Unable to determine current user id.',
+              'bad_response',
+              args.action,
+            );
+          }
+          const json = PlaylistDetailsResponseCodec.parse(
+            await requestSpotify<unknown>(client, 'POST', `users/${userId}/playlists`, {
+              name: parsed.name ?? 'New Playlist',
+              description: parsed.description,
+              public: parsed.public,
+              collaborative: parsed.collaborative,
+            }),
+          );
           const details = toPlaylistDetails(json);
           const jrec2 = json as unknown as Record<string, unknown>;
           const name = String((jrec2?.name as string | undefined) ?? 'playlist');
@@ -251,20 +242,18 @@ export const spotifyPlaylistTool = {
               args.action,
             );
           }
-          const url = new URL(`playlists/${parsed.playlist_id}`, base).toString();
-          const body = JSON.stringify({
-            name: parsed.name,
-            description: parsed.description,
-            public: parsed.public,
-            collaborative: parsed.collaborative,
-          });
-          const response = await http(url, {
-            method: 'PUT',
-            headers,
-            body,
-            signal,
-          });
-          await expectOkOr204(response, 'Update playlist details failed');
+          await requestSpotify<unknown>(
+            client,
+            'PUT',
+            `playlists/${parsed.playlist_id}`,
+            {
+              name: parsed.name,
+              description: parsed.description,
+              public: parsed.public,
+              collaborative: parsed.collaborative,
+            },
+            true,
+          );
           const updatedBits: string[] = [];
           if (typeof parsed.name === 'string') {
             updatedBits.push(`name='${parsed.name}'`);
@@ -301,31 +290,25 @@ export const spotifyPlaylistTool = {
               args.action,
             );
           }
-          const url = new URL(
-            `playlists/${parsed.playlist_id}/tracks`,
-            base,
-          ).toString();
-          const body = JSON.stringify({ uris: parsed.uris });
-          const response = await http(url, {
-            method: 'POST',
-            headers,
-            body,
-            signal,
-          });
-          await expectOkOr204(response, 'Add items failed');
           const json = SnapshotResponseCodec.parse(
-            await response.json().catch(() => ({}) as unknown),
+            await requestSpotify<unknown>(
+              client,
+              'POST',
+              `playlists/${parsed.playlist_id}/tracks`,
+              { uris: parsed.uris },
+            ),
           );
           const count = parsed.uris.length;
           let playlistName: string | undefined;
           let trackNames: string[] = [];
           try {
-            const plResp = await http(
-              new URL(`playlists/${parsed.playlist_id}`, base).toString(),
-              { headers, signal },
+            const plJson = PlaylistDetailsResponseCodec.parse(
+              await requestSpotify<unknown>(
+                client,
+                'GET',
+                `playlists/${parsed.playlist_id}`,
+              ),
             );
-            await expectOkOr204(plResp, 'Get playlist failed');
-            const plJson = PlaylistDetailsResponseCodec.parse(await plResp.json());
             const plr2 = plJson as unknown as Record<string, unknown>;
             playlistName = String((plr2?.name as string | undefined) ?? '');
           } catch {}
@@ -337,11 +320,13 @@ export const spotifyPlaylistTool = {
               })
               .filter(Boolean) as string[];
             if (ids.length > 0) {
-              const tUrl = new URL('tracks', base);
-              tUrl.searchParams.set('ids', ids.slice(0, 50).join(','));
-              const tResp = await http(tUrl.toString(), { headers, signal });
-              await expectOkOr204(tResp, 'Fetch tracks failed');
-              const tJson = (await tResp.json()) as { tracks?: unknown[] };
+              const trackParams = new URLSearchParams();
+              trackParams.set('ids', ids.slice(0, 50).join(','));
+              const tJson = (await requestSpotify<unknown>(
+                client,
+                'GET',
+                buildEndpoint('tracks', trackParams),
+              )) as { tracks?: unknown[] };
               const items = Array.isArray(tJson.tracks) ? tJson.tracks : [];
               trackNames = items
                 .map((x) => {
@@ -382,33 +367,27 @@ export const spotifyPlaylistTool = {
               args.action,
             );
           }
-          const url = new URL(
-            `playlists/${parsed.playlist_id}/tracks`,
-            base,
-          ).toString();
-          const body = JSON.stringify({
-            tracks: parsed.tracks,
-            snapshot_id: parsed.snapshot_id,
-          });
-          const response = await http(url, {
-            method: 'DELETE',
-            headers,
-            body,
-            signal,
-          });
-          await expectOkOr204(response, 'Remove items failed');
           const json = SnapshotResponseCodec.parse(
-            await response.json().catch(() => ({}) as unknown),
+            await requestSpotify<unknown>(
+              client,
+              'DELETE',
+              `playlists/${parsed.playlist_id}/tracks`,
+              {
+                tracks: parsed.tracks,
+                snapshot_id: parsed.snapshot_id,
+              },
+            ),
           );
           const count = parsed.tracks.length;
           let playlistName: string | undefined;
           try {
-            const plResp = await http(
-              new URL(`playlists/${parsed.playlist_id}`, base).toString(),
-              { headers, signal },
+            const plJson = PlaylistDetailsResponseCodec.parse(
+              await requestSpotify<unknown>(
+                client,
+                'GET',
+                `playlists/${parsed.playlist_id}`,
+              ),
             );
-            await expectOkOr204(plResp, 'Get playlist failed');
-            const plJson = PlaylistDetailsResponseCodec.parse(await plResp.json());
             const plr3 = plJson as unknown as Record<string, unknown>;
             playlistName = String((plr3?.name as string | undefined) ?? '');
           } catch {}
@@ -421,11 +400,13 @@ export const spotifyPlaylistTool = {
               })
               .filter(Boolean) as string[];
             if (ids.length > 0) {
-              const tUrl = new URL('tracks', base);
-              tUrl.searchParams.set('ids', ids.slice(0, 50).join(','));
-              const tResp = await http(tUrl.toString(), { headers, signal });
-              await expectOkOr204(tResp, 'Fetch tracks failed');
-              const tJson = (await tResp.json()) as { tracks?: unknown[] };
+              const trackParams = new URLSearchParams();
+              trackParams.set('ids', ids.slice(0, 50).join(','));
+              const tJson = (await requestSpotify<unknown>(
+                client,
+                'GET',
+                buildEndpoint('tracks', trackParams),
+              )) as { tracks?: unknown[] };
               const items = Array.isArray(tJson.tracks) ? tJson.tracks : [];
               trackNames = items
                 .map((x) => {
@@ -462,25 +443,18 @@ export const spotifyPlaylistTool = {
               args.action,
             );
           }
-          const url = new URL(
-            `playlists/${parsed.playlist_id}/tracks`,
-            base,
-          ).toString();
-          const body = JSON.stringify({
-            range_start: parsed.range_start,
-            insert_before: parsed.insert_before,
-            range_length: parsed.range_length,
-            snapshot_id: parsed.snapshot_id,
-          });
-          const response = await http(url, {
-            method: 'PUT',
-            headers,
-            body,
-            signal,
-          });
-          await expectOkOr204(response, 'Reorder items failed');
           const json = SnapshotResponseCodec.parse(
-            await response.json().catch(() => ({}) as unknown),
+            await requestSpotify<unknown>(
+              client,
+              'PUT',
+              `playlists/${parsed.playlist_id}/tracks`,
+              {
+                range_start: parsed.range_start,
+                insert_before: parsed.insert_before,
+                range_length: parsed.range_length,
+                snapshot_id: parsed.snapshot_id,
+              },
+            ),
           );
           const moved = parsed.range_length ?? 1;
           const msg = `Moved ${moved} item(s) in playlist ${parsed.playlist_id} starting at ${parsed.range_start} before ${parsed.insert_before}.`;
@@ -520,6 +494,45 @@ function ok(action: string, data?: unknown, msg?: string): CallToolResult {
     content: contentParts,
     structuredContent: validateDev(SpotifyPlaylistOutputObject, structured),
   };
+}
+
+function buildEndpoint(path: string, params: URLSearchParams): string {
+  const query = params.toString();
+  return query ? `${path}?${query}` : path;
+}
+
+async function requestSpotify<T>(
+  client: SpotifyApi,
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+  path: string,
+  body?: unknown,
+  allowEmpty = false,
+): Promise<T> {
+  try {
+    return await client.makeRequest<T>(method, path, body);
+  } catch (error) {
+    if (
+      allowEmpty &&
+      error instanceof SyntaxError &&
+      !(error as { status?: number }).status
+    ) {
+      return undefined as T;
+    }
+    throw wrapSpotifyError(error);
+  }
+}
+
+function wrapSpotifyError(error: unknown): Error {
+  const status = (error as { status?: number }).status;
+  if (typeof status === 'number') {
+    const code = mapStatusToCode(status);
+    const raw = (error as Error).message;
+    const cleaned = raw.replace(/\s*\[[^\]]+\]$/, '');
+    const err = new Error(`${cleaned} [${code}]`);
+    (err as { status?: number }).status = status;
+    return err;
+  }
+  return error instanceof Error ? error : new Error(String(error));
 }
 
 function fail(

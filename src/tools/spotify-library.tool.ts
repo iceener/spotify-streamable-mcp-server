@@ -1,33 +1,22 @@
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import type { SpotifyApi } from '@spotify/web-api-ts-sdk';
 import { config } from '../config/env.ts';
 import { toolsMetadata } from '../config/metadata.ts';
-import { getUserBearer } from '../core/auth.ts';
 import {
   type SpotifyLibraryInput,
   SpotifyLibraryInputSchema,
 } from '../schemas/inputs.ts';
 import { SpotifyLibraryOutputObject } from '../schemas/outputs.ts';
-import { createHttpClient } from '../services/http-client.ts';
+import { getSpotifyUserClient } from '../services/spotify/sdk.ts';
 import {
   SavedTracksResponseCodec,
   TrackCodec,
   type TrackCodecType,
 } from '../types/spotify.codecs.ts';
-import { expectOkOr204 } from '../utils/http-result.ts';
+import { mapStatusToCode } from '../utils/http-result.ts';
 import { logger } from '../utils/logger.ts';
 import { toSlimTrack } from '../utils/mappers.ts';
-import { apiBase } from '../utils/spotify.ts';
 import { validateDev } from '../utils/validate.ts';
-
-const http = createHttpClient({
-  baseHeaders: {
-    'Content-Type': 'application/json',
-    'User-Agent': `mcp-spotify/${config.MCP_VERSION}`,
-  },
-  rateLimit: { rps: 5, burst: 10 },
-  timeout: 20000,
-  retries: 1,
-});
 
 export const spotifyLibraryTool = {
   name: 'spotify_library',
@@ -37,36 +26,35 @@ export const spotifyLibraryTool = {
 
   handler: async (
     args: SpotifyLibraryInput,
-    signal?: AbortSignal,
+    _signal?: AbortSignal,
   ): Promise<CallToolResult> => {
     try {
       const parsed = SpotifyLibraryInputSchema.parse(args);
-      const token = await getUserBearer();
-      if (!token) {
+      const client = await getSpotifyUserClient();
+      if (!client) {
         return fail(
           'Not signed in. Please authenticate.',
           'unauthorized',
           parsed.action,
         );
       }
-      const headers = { Authorization: `Bearer ${token}` };
-      const baseUrl = apiBase(config.SPOTIFY_API_URL);
 
       switch (parsed.action) {
         case 'tracks_get': {
-          const url = new URL('me/tracks', baseUrl);
+          const params = new URLSearchParams();
           if (parsed.market) {
-            url.searchParams.set('market', parsed.market);
+            params.set('market', parsed.market);
           }
           if (typeof parsed.limit === 'number') {
-            url.searchParams.set('limit', String(parsed.limit));
+            params.set('limit', String(parsed.limit));
           }
           if (typeof parsed.offset === 'number') {
-            url.searchParams.set('offset', String(parsed.offset));
+            params.set('offset', String(parsed.offset));
           }
-          const response = await http(url.toString(), { headers, signal });
-          await expectOkOr204(response, 'List saved tracks failed');
-          const json = SavedTracksResponseCodec.parse(await response.json());
+          const endpoint = buildEndpoint('me/tracks', params);
+          const json = SavedTracksResponseCodec.parse(
+            await requestSpotify<unknown>(client, 'GET', endpoint),
+          );
           const items = Array.isArray(json.items) ? json.items : [];
           const tracks = items
             .map((it) => it.track)
@@ -104,23 +92,14 @@ export const spotifyLibraryTool = {
               args.action,
             );
           }
-          const url = new URL('me/tracks', baseUrl).toString();
-          const body = JSON.stringify({ ids: parsed.ids });
-          const response = await http(url, {
-            method: 'PUT',
-            headers,
-            body,
-            signal,
+          await requestSpotify<unknown>(client, 'PUT', 'me/tracks', {
+            ids: parsed.ids,
           });
-          await expectOkOr204(response, 'Save tracks failed');
           let trackSlims: { name: string; uri?: string }[] = [];
           try {
             trackSlims = await fetchTrackSlims({
-              http,
-              baseUrl,
-              headers,
+              client,
               ids: parsed.ids,
-              signal,
             });
           } catch {}
           const noun = parsed.ids.length === 1 ? 'track' : 'tracks';
@@ -145,23 +124,14 @@ export const spotifyLibraryTool = {
               args.action,
             );
           }
-          const url = new URL('me/tracks', baseUrl).toString();
-          const body = JSON.stringify({ ids: parsed.ids });
-          const response = await http(url, {
-            method: 'DELETE',
-            headers,
-            body,
-            signal,
+          await requestSpotify<unknown>(client, 'DELETE', 'me/tracks', {
+            ids: parsed.ids,
           });
-          await expectOkOr204(response, 'Remove saved tracks failed');
           let trackSlims: { name: string; uri?: string }[] = [];
           try {
             trackSlims = await fetchTrackSlims({
-              http,
-              baseUrl,
-              headers,
+              client,
               ids: parsed.ids,
-              signal,
             });
           } catch {}
           const noun = parsed.ids.length === 1 ? 'track' : 'tracks';
@@ -186,22 +156,21 @@ export const spotifyLibraryTool = {
               args.action,
             );
           }
-          const url = new URL('me/tracks/contains', baseUrl);
-          url.searchParams.set('ids', parsed.ids.join(','));
-          const response = await http(url.toString(), { headers, signal });
-          await expectOkOr204(response, 'Check saved tracks failed');
-          const contains = (await response.json()) as boolean[];
+          const params = new URLSearchParams();
+          params.set('ids', parsed.ids.join(','));
+          const contains = (await requestSpotify<unknown>(
+            client,
+            'GET',
+            buildEndpoint('me/tracks/contains', params),
+          )) as boolean[];
           const yes = contains.filter(Boolean).length;
           let savedSlims: { name: string; uri?: string }[] = [];
           try {
             const savedIds = parsed.ids.filter((_, i) => contains[i]);
             if (savedIds.length > 0) {
               savedSlims = await fetchTrackSlims({
-                http,
-                baseUrl,
-                headers,
+                client,
                 ids: savedIds,
-                signal,
               });
             }
           } catch {}
@@ -274,23 +243,61 @@ function fail(
   };
 }
 
+function buildEndpoint(path: string, params: URLSearchParams): string {
+  const query = params.toString();
+  return query ? `${path}?${query}` : path;
+}
+
+async function requestSpotify<T>(
+  client: SpotifyApi,
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+  path: string,
+  body?: unknown,
+  allowEmpty = false,
+): Promise<T> {
+  try {
+    return await client.makeRequest<T>(method, path, body);
+  } catch (error) {
+    if (
+      allowEmpty &&
+      error instanceof SyntaxError &&
+      !(error as { status?: number }).status
+    ) {
+      return undefined as T;
+    }
+    throw wrapSpotifyError(error);
+  }
+}
+
+function wrapSpotifyError(error: unknown): Error {
+  const status = (error as { status?: number }).status;
+  if (typeof status === 'number') {
+    const code = mapStatusToCode(status);
+    const raw = (error as Error).message;
+    const cleaned = raw.replace(/\s*\[[^\]]+\]$/, '');
+    const err = new Error(`${cleaned} [${code}]`);
+    (err as { status?: number }).status = status;
+    return err;
+  }
+  return error instanceof Error ? error : new Error(String(error));
+}
+
 async function fetchTrackSlims(params: {
-  http: typeof http;
-  baseUrl: string;
-  headers: { Authorization: string };
+  client: SpotifyApi;
   ids: string[];
-  signal?: AbortSignal;
 }): Promise<{ name: string; uri?: string }[]> {
-  const { http: client, baseUrl, headers, ids, signal } = params;
+  const { client, ids } = params;
   const unique = Array.from(new Set(ids)).slice(0, 50);
   if (unique.length === 0) {
     return [];
   }
-  const tUrl = new URL('tracks', baseUrl);
-  tUrl.searchParams.set('ids', unique.join(','));
-  const tResp = await client(tUrl.toString(), { headers, signal });
-  await expectOkOr204(tResp, 'Fetch tracks failed');
-  const tJson = (await tResp.json()) as { tracks?: unknown[] };
+  const paramsSearch = new URLSearchParams();
+  paramsSearch.set('ids', unique.join(','));
+  const tJson = (await requestSpotify<unknown>(
+    client,
+    'GET',
+    buildEndpoint('tracks', paramsSearch),
+  )) as { tracks?: unknown[] };
   const items = Array.isArray(tJson.tracks) ? tJson.tracks : [];
   return items
     .map((x) => {
