@@ -321,12 +321,21 @@ async function executeOperation({
               "Provide either 'context_uri' (optionally with 'offset') or 'uris', not both.",
           };
         }
+        const normalizedOffset = normalizeOffset(operation.offset);
+        if (normalizedOffset.error) {
+          return {
+            index,
+            action: 'play',
+            ok: false,
+            error: normalizedOffset.error,
+          };
+        }
         await apiPlay(client, {
-          device_id: operation.device_id,
-          context_uri: operation.context_uri,
-          uris: operation.uris,
-          offset: operation.offset,
-          position_ms: operation.position_ms,
+            device_id: operation.device_id,
+            context_uri: operation.context_uri,
+            uris: operation.uris,
+            offset: normalizedOffset.value,
+            position_ms: operation.position_ms,
         });
         return { index, action: 'play', ok: true };
       }
@@ -501,4 +510,34 @@ function toolError(message: string, code?: ErrorCode): CallToolResult {
     content: [{ type: 'text', text: JSON.stringify(structured) }],
     structuredContent: validateDev(SpotifyControlBatchOutput, structured),
   };
+}
+
+function normalizeOffset(
+  offset?: SpotifyControlInput['operations'][number]['offset'],
+): { value?: { position?: number; uri?: string }; error?: string } {
+  if (!offset) {
+    return { value: undefined };
+  }
+
+  const hasPosition = typeof offset.position === 'number';
+  const trimmedUri =
+    typeof offset.uri === 'string' ? offset.uri.trim() : undefined;
+  const hasUri = typeof trimmedUri === 'string' && trimmedUri.length > 0;
+
+  if (!hasPosition && !hasUri) {
+    return { value: undefined };
+  }
+
+  if (hasPosition && hasUri) {
+    return {
+      error:
+        "Illegal offset: use either 'offset.position' or 'offset.uri', not both.",
+    };
+  }
+
+  if (hasUri) {
+    return { value: { uri: trimmedUri } };
+  }
+
+  return { value: { position: offset.position } };
 }

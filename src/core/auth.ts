@@ -9,12 +9,7 @@ import {
   getCurrentSpotifyAccessToken,
 } from './context.ts';
 import { ensureSession, getSession } from './session.ts';
-import {
-  getRecordByRsAccessToken,
-  getSpotifyTokensByRsToken,
-  getSpotifyTokensWithRefreshByRsAccessToken,
-  updateSpotifyTokensByRsRefreshToken,
-} from './tokens.ts';
+import { getTokenStore } from '../shared/storage/singleton.ts';
 
 const http = createHttpClient({
   baseHeaders: {
@@ -169,12 +164,17 @@ export async function getUserBearer(): Promise<string | null> {
           }
           const rsRefreshToken = session?.rs?.refresh_token;
           if (rsRefreshToken) {
-            updateSpotifyTokensByRsRefreshToken(rsRefreshToken, {
-              access_token: newAccess,
-              refresh_token: newRt,
-              expires_at: newExp,
-              scopes: session?.spotify?.scopes,
-            });
+            const store = getTokenStore();
+            await store.updateByRsRefresh(
+              rsRefreshToken,
+              {
+                access_token: newAccess,
+                refresh_token: newRt,
+                expires_at: newExp,
+                scopes: session?.spotify?.scopes,
+              },
+              session?.rs?.access_token,
+            );
           }
           return newAccess;
         } catch (err) {
@@ -225,18 +225,10 @@ async function restoreSessionFromRsToken(params: {
 }): Promise<{ session: ReturnType<typeof ensureSession> } | null> {
   const { sessionId, rsToken } = params;
   try {
-    const restored = await getSpotifyTokensWithRefreshByRsAccessToken(rsToken, {
-      signal: AbortSignal.timeout(10_000),
-      refreshWindowMs: 60_000,
-    });
-    let tokens = restored?.tokens ?? null;
-    const refreshed = restored?.refreshed ?? false;
-
-    if (!tokens) {
-      tokens = getSpotifyTokensByRsToken(rsToken);
-    }
-
-    if (!tokens) {
+    const store = getTokenStore();
+    const record = await store.getByRsAccess(rsToken);
+    
+    if (!record?.spotify) {
       void logger.warning('auth', {
         message: 'restoreSessionFromRsToken: No Spotify tokens linked to RS token',
         sessionId,
@@ -244,6 +236,7 @@ async function restoreSessionFromRsToken(params: {
       return null;
     }
 
+    const tokens = record.spotify;
     const session = ensureSession(sessionId);
     session.spotify = {
       access_token: tokens.access_token,
@@ -253,20 +246,12 @@ async function restoreSessionFromRsToken(params: {
     };
     session.rs = {
       access_token: rsToken,
-      refresh_token: getRecordByRsAccessToken(rsToken)?.rs_refresh_token ?? '',
+      refresh_token: record.rs_refresh_token,
     };
-
-    if (refreshed) {
-      const rsRefresh = session.rs?.refresh_token;
-      if (rsRefresh) {
-        updateSpotifyTokensByRsRefreshToken(rsRefresh, tokens, rsToken);
-      }
-    }
 
     void logger.info('auth', {
       message: 'restoreSessionFromRsToken: Session restored',
       sessionId,
-      refreshed,
     });
 
     return { session };

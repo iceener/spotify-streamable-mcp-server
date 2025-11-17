@@ -10,7 +10,7 @@ import { config } from '../../config/env.ts';
 import { getUserBearer } from '../../core/auth.ts';
 import { getCurrentSessionId } from '../../core/context.ts';
 import { ensureSession, getSession } from '../../core/session.ts';
-import { updateSpotifyTokensByRsRefreshToken } from '../../core/tokens.ts';
+import { updateSpotifyTokensByRsRefreshToken } from '../../core/tokens-compat.ts';
 import { logger } from '../../utils/logger.ts';
 import { refreshSpotifyTokens } from './oauth.ts';
 

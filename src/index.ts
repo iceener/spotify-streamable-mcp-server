@@ -2,10 +2,18 @@ import { serve } from '@hono/node-server';
 import { config } from './config/env.ts';
 import { buildHttpApp } from './http/app.ts';
 import { buildAuthApp } from './http/auth-app.ts';
+import { FileTokenStore } from './shared/storage/file.ts';
+import { MemorySessionStore } from './shared/storage/memory.ts';
+import { initializeStorage } from './shared/storage/singleton.ts';
 import { logger } from './utils/logger.ts';
 
 async function main(): Promise<void> {
   try {
+    // Initialize storage singleton for compatibility with legacy code
+    const tokenStore = new FileTokenStore(config.RS_TOKENS_FILE);
+    const sessionStore = new MemorySessionStore();
+    initializeStorage(tokenStore, sessionStore);
+
     const app = buildHttpApp();
     serve({ fetch: app.fetch, port: config.PORT, hostname: '127.0.0.1' });
     // Minimal local Authorization Server for testing (runs on PORT+1)

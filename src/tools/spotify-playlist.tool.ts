@@ -219,10 +219,10 @@ export const spotifyPlaylistTool = {
           }
           const json = PlaylistDetailsResponseCodec.parse(
             await requestSpotify<unknown>(client, 'POST', `users/${userId}/playlists`, {
-              name: parsed.name ?? 'New Playlist',
-              description: parsed.description,
-              public: parsed.public,
-              collaborative: parsed.collaborative,
+            name: parsed.name ?? 'New Playlist',
+            description: parsed.description,
+            public: parsed.public,
+            collaborative: parsed.collaborative,
             }),
           );
           const details = toPlaylistDetails(json);
@@ -247,10 +247,10 @@ export const spotifyPlaylistTool = {
             'PUT',
             `playlists/${parsed.playlist_id}`,
             {
-              name: parsed.name,
-              description: parsed.description,
-              public: parsed.public,
-              collaborative: parsed.collaborative,
+            name: parsed.name,
+            description: parsed.description,
+            public: parsed.public,
+            collaborative: parsed.collaborative,
             },
             true,
           );
@@ -447,12 +447,12 @@ export const spotifyPlaylistTool = {
             await requestSpotify<unknown>(
               client,
               'PUT',
-              `playlists/${parsed.playlist_id}/tracks`,
+            `playlists/${parsed.playlist_id}/tracks`,
               {
-                range_start: parsed.range_start,
-                insert_before: parsed.insert_before,
-                range_length: parsed.range_length,
-                snapshot_id: parsed.snapshot_id,
+            range_start: parsed.range_start,
+            insert_before: parsed.insert_before,
+            range_length: parsed.range_length,
+            snapshot_id: parsed.snapshot_id,
               },
             ),
           );

@@ -1,7 +1,7 @@
 import type { HttpBindings } from '@hono/node-server';
 import type { MiddlewareHandler } from 'hono';
 import { config } from '../../config/env.ts';
-import { getSpotifyTokensByRsToken } from '../../core/tokens.ts';
+import { getSpotifyTokensByRsToken } from '../../core/tokens-compat.ts';
 
 // Pass through certain auth headers to downstream handlers in a normalized way
 // without enforcing validation here (validation belongs to the specific server/tool).

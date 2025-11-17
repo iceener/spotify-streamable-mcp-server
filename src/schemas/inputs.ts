@@ -56,73 +56,121 @@ export type SpotifyStatusInput = z.infer<typeof SpotifyStatusInputSchema>;
 export const SpotifyControlInputSchema = z.object({
   operations: z
     .array(
-      z.object({
-        action: z
-          .enum([
-            'play',
-            'pause',
-            'next',
-            'previous',
-            'seek',
-            'volume',
-            'shuffle',
-            'repeat',
-            'transfer',
-            'queue',
-          ])
-          .describe('Operation to perform.'),
-        device_id: z
-          .string()
-          .optional()
-          .describe(
-            "Target device. Get via 'player_status' → devices[].id. Required for 'transfer'; optional for others.",
-          ),
-        position_ms: z
-          .number()
-          .nonnegative()
-          .optional()
-          .describe('Seek or start playback from this position (milliseconds).'),
-        volume_percent: z
-          .number()
-          .min(0)
-          .max(100)
-          .optional()
-          .describe('Volume level 0-100 for volume action.'),
-        shuffle: z.boolean().optional().describe('Shuffle on/off for shuffle action.'),
-        repeat: z
-          .enum(['off', 'track', 'context'])
-          .optional()
-          .describe('Repeat mode for repeat action.'),
-        context_uri: z
-          .string()
-          .optional()
-          .describe(
-            "Playback context URI (album/artist/playlist). Mutually exclusive with 'uris'. Use with 'offset' to pick a specific track (album/playlist only).",
-          ),
-        uris: z
-          .array(z.string())
-          .optional()
-          .describe(
-            "Track URIs to play directly. Do not provide together with 'context_uri'.",
-          ),
-        offset: z
-          .object({
-            position: z.number().nonnegative().optional(),
-            uri: z.string().optional(),
-          })
-          .optional()
-          .describe(
-            'Start point within the context: zero-based position or an item URI present in the context (album/playlist).',
-          ),
-        queue_uri: z
-          .string()
-          .optional()
-          .describe('Item URI to add to the queue (track or episode).'),
-        transfer_play: z
-          .boolean()
-          .optional()
-          .describe('When transferring, start playback immediately on the new device.'),
-      }),
+      z
+        .object({
+          action: z
+            .enum([
+              'play',
+              'pause',
+              'next',
+              'previous',
+              'seek',
+              'volume',
+              'shuffle',
+              'repeat',
+              'transfer',
+              'queue',
+            ])
+            .describe('Operation to perform.'),
+          device_id: z
+            .string()
+            .optional()
+            .describe(
+              "Target device. Get via 'player_status' → devices[].id. Required for 'transfer'; optional for others.",
+            ),
+          position_ms: z
+            .number()
+            .nonnegative()
+            .optional()
+            .describe('Seek or start playback from this position (milliseconds).'),
+          volume_percent: z
+            .number()
+            .min(0)
+            .max(100)
+            .optional()
+            .describe('Volume level 0-100 for volume action.'),
+          shuffle: z.boolean().optional().describe('Shuffle on/off for shuffle action.'),
+          repeat: z
+            .enum(['off', 'track', 'context'])
+            .optional()
+            .describe('Repeat mode for repeat action.'),
+          context_uri: z
+            .string()
+            .optional()
+            .transform((value) => {
+              if (!value) return undefined;
+              const trimmed = value.trim();
+              return trimmed.length > 0 ? trimmed : undefined;
+            })
+            .describe(
+              "Playback context URI (album/artist/playlist). Must NOT be provided together with 'uris'. Use with 'offset' to pick a specific track (album/playlist only).",
+            ),
+          uris: z
+            .array(z.string())
+            .optional()
+            .describe(
+              "Track URIs to play directly. Must NOT be provided together with 'context_uri'.",
+            ),
+          offset: z
+            .object({
+              position: z.number().nonnegative().optional(),
+              uri: z
+                .string()
+                .optional()
+                .transform((value) => {
+                  if (!value) return undefined;
+                  const trimmed = value.trim();
+                  return trimmed.length > 0 ? trimmed : undefined;
+                }),
+            })
+            .optional()
+            .describe(
+              'Start point within the context: zero-based position or an item URI present in the context (album/playlist). Provide only when using context playback.',
+            ),
+          queue_uri: z
+            .string()
+            .optional()
+            .transform((value) => {
+              if (!value) return undefined;
+              const trimmed = value.trim();
+              return trimmed.length > 0 ? trimmed : undefined;
+            })
+            .describe('Item URI to add to the queue (track or episode).'),
+          transfer_play: z
+            .boolean()
+            .optional()
+            .describe('When transferring, start playback immediately on the new device.'),
+        })
+        .superRefine((operation, ctx) => {
+          const hasContext = typeof operation.context_uri === 'string';
+          const hasUris =
+            Array.isArray(operation.uris) && operation.uris.filter(Boolean).length > 0;
+          if (hasContext && hasUris) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message:
+                "Illegal playback payload: provide either 'context_uri' (optionally with 'offset') or 'uris'. Spotify rejects requests that include both.",
+              path: ['context_uri'],
+            });
+          }
+          if (operation.offset?.uri && !hasContext) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: "'offset.uri' requires a 'context_uri' album or playlist.",
+              path: ['offset', 'uri'],
+            });
+          }
+          if (
+            typeof operation.offset?.position === 'number' &&
+            operation.offset?.uri
+          ) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: "Use only one of 'offset.position' or 'offset.uri'.",
+              path: ['offset'],
+            });
+          }
+        }),
     )
     .min(1)
     .max(25)

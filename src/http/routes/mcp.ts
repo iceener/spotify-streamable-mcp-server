@@ -7,10 +7,7 @@ import { Hono } from 'hono';
 import { validateSpotifyToken } from '../../core/auth.ts';
 import { runWithRequestContext } from '../../core/context.ts';
 import { ensureSession } from '../../core/session.ts';
-import {
-  getSpotifyTokensByRsToken,
-  refreshSpotifyTokensForRsAccessToken,
-} from '../../core/tokens.ts';
+import { getTokenStore } from '../../shared/storage/singleton.ts';
 import { logger } from '../../utils/logger.ts';
 
 export function buildMcpRoutes(params: {
@@ -68,7 +65,9 @@ export function buildMcpRoutes(params: {
               rsTokenLength: rsToken.length,
             });
 
-            const spotifyRecord = getSpotifyTokensByRsToken(rsToken);
+            const store = getTokenStore();
+            const record = await store.getByRsAccess(rsToken);
+            const spotifyRecord = record?.spotify ?? null;
             if (spotifyRecord) {
               void logger.info('auth', {
                 message: 'Found Spotify tokens for RS token, validating access token',
@@ -83,7 +82,7 @@ export function buildMcpRoutes(params: {
               const initialValid = await validateSpotifyToken(
                 spotifyRecord.access_token,
               );
-              let spotify = spotifyRecord;
+              const spotify = spotifyRecord;
               if (!initialValid) {
                 void logger.warning('auth', {
                   message:
@@ -91,12 +90,11 @@ export function buildMcpRoutes(params: {
                   sessionId: plannedSid,
                   tokenExpired: Date.now() > (spotifyRecord.expires_at || 0),
                 });
-                const refreshed = await refreshSpotifyTokensForRsAccessToken(rsToken, {
-                  signal: AbortSignal.timeout(10_000),
-                });
-                if (!refreshed) {
+                const store = getTokenStore();
+                const record = await store.getByRsAccess(rsToken);
+                if (!record?.spotify.refresh_token) {
                   void logger.warning('auth', {
-                    message: 'RS-linked refresh failed, rejecting session',
+                    message: 'No refresh token available for RS token',
                     sessionId: plannedSid,
                   });
                   return c.json(
@@ -111,7 +109,28 @@ export function buildMcpRoutes(params: {
                     401,
                   );
                 }
-                spotify = refreshed.spotify;
+
+                const { refreshSpotifyTokens } = await import(
+                  '../../services/spotify/oauth.ts'
+                );
+                const refreshed = await refreshSpotifyTokens({
+                  refreshToken: record.spotify.refresh_token,
+                  signal: AbortSignal.timeout(10_000),
+                });
+                const spotify = {
+                  access_token: refreshed.access_token || '',
+                  refresh_token:
+                    refreshed.refresh_token || record.spotify.refresh_token,
+                  expires_at: Date.now() + Number(refreshed.expires_in ?? 3600) * 1000,
+                  scopes:
+                    refreshed.scope?.split(' ').filter(Boolean) ||
+                    record.spotify.scopes,
+                };
+                await store.updateByRsRefresh(
+                  record.rs_refresh_token,
+                  spotify,
+                  rsToken,
+                );
               }
 
               if (!(await validateSpotifyToken(spotify.access_token))) {

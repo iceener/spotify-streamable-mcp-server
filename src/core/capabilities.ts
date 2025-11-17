@@ -4,7 +4,5 @@ export function buildCapabilities(): ServerCapabilities {
   return {
     logging: {},
     tools: { listChanged: true },
-    prompts: { listChanged: true },
-    resources: { listChanged: true },
   };
 }
