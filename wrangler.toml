@@ -7,7 +7,7 @@ compatibility_flags = ["nodejs_compat"]
 [vars]
 # MCP protocol
 MCP_PROTOCOL_VERSION = "2025-06-18"
-MCP_TITLE = "Spotify MCP"
+MCP_TITLE = "Spotify Music"
 MCP_VERSION = "1.0.0"
 
 # Auth - MUST be enabled for Spotify OAuth

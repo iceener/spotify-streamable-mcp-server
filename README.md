@@ -4,6 +4,13 @@ Streamable HTTP MCP server for Spotify — search music, control playback, manag
 
 Author: [overment](https://x.com/_overment)
 
+> [!WARNING]
+> This warning applies only to the HTTP transport and OAuth wrapper included for convenience. They are intended for personal/local use and are not production‑hardened.
+>
+> The MCP tools and schemas themselves are implemented with strong validation, slim outputs, clear error handling, and other best practices.
+>
+> If you plan to deploy remotely, harden the OAuth/HTTP layer: proper token validation, secure storage, TLS termination, strict CORS/origin checks, rate limiting, audit logging, and compliance with Spotify's terms.
+
 ## Motivation
 
 At first glance, a "Spotify MCP" may seem unnecessary—pressing play or skipping a song is often faster by hand. It becomes genuinely useful when you don't know the exact title (e.g., "soundtrack from [movie title]"), when you want to "create and play a playlist that matches my mood", or when you're using voice. This MCP lets an LLM handle the fuzzy intent → search → selection → control loop, and it returns clear confirmations of what happened. It works well with voice interfaces and can be connected to agents/workflows for smart‑home automations.
@@ -250,21 +257,45 @@ Manage saved tracks.
 
 ## Example Session
 
-### 1. Check what's playing
+A complete walkthrough showing all tools working together.
+
+### 1. "What's playing?"
+
+**Tool:** `player_status`
 
 ```json
 { "include": ["player", "devices", "current_track"] }
 ```
 
-Response:
+**Response:**
 ```
-'Memories' is playing on 'MacBook Pro' (device_id: "8fc48c51d766...").
+'Come With Me - Radio Mix' is playing on 'MacBook Pro' (device_id: "8fc48c51d766...").
 
 Available devices (use device_id for control):
 • MacBook Pro (Computer) [ACTIVE] → device_id: "8fc48c51d766..."
 ```
 
-### 2. Play a specific track from a playlist
+### 2. "Play Protected from this playlist"
+
+First, get playlist items to find the track position:
+
+**Tool:** `spotify_playlist`
+
+```json
+{ "action": "items", "playlist_id": "2mMPIccnFiOd2xgkO0iABm", "limit": 50 }
+```
+
+**Response:**
+```
+Loaded 50 items from 'Nora' (context: spotify:playlist:2mMPIccnFiOd2xgkO0iABm).
+- #0 Come with Me - Radio Mix — spotify:track:2FxwTax2LGVybNIrreiwXv
+- #7 Protected — spotify:track:1cRRIRrUiPnLOvsnWNhoH9
+… and more
+```
+
+Then play at position #7:
+
+**Tool:** `spotify_control`
 
 ```json
 {
@@ -276,17 +307,38 @@ Available devices (use device_id for control):
 }
 ```
 
-Response:
+**Response:**
 ```
 Successful: play. Status: Now playing on 'MacBook Pro'. Current track: 'Protected'.
 ```
 
-### 3. Set volume
+### 3. "Add this to my favorites"
+
+**Tool:** `spotify_library`
+
+```json
+{ "action": "tracks_add", "ids": ["1cRRIRrUiPnLOvsnWNhoH9"] }
+```
+
+**Response:**
+```
+Saved 1 track:
+- Protected — spotify:track:1cRRIRrUiPnLOvsnWNhoH9
+```
+
+### 4. "Turn volume up to 100%"
+
+**Tool:** `spotify_control`
 
 ```json
 {
-  "operations": [{ "action": "volume", "volume_percent": 80 }]
+  "operations": [{ "action": "volume", "volume_percent": 100 }]
 }
+```
+
+**Response:**
+```
+Successful: volume. Status: Now playing on 'MacBook Pro'. Current track: 'Protected'. Volume: 100%
 ```
 
 ## HTTP Endpoints
