@@ -2,7 +2,21 @@
 
 Streamable HTTP MCP server for Spotify — search music, control playback, manage playlists and saved songs.
 
-Built on the [MCP Template](../_template) with OAuth 2.1 PKCE authentication.
+Author: [overment](https://x.com/_overment)
+
+## Motivation
+
+At first glance, a "Spotify MCP" may seem unnecessary—pressing play or skipping a song is often faster by hand. It becomes genuinely useful when you don't know the exact title (e.g., "soundtrack from [movie title]"), when you want to "create and play a playlist that matches my mood", or when you're using voice. This MCP lets an LLM handle the fuzzy intent → search → selection → control loop, and it returns clear confirmations of what happened. It works well with voice interfaces and can be connected to agents/workflows for smart‑home automations.
+
+### Demo
+
+![Alice App Demo](https://github.com/iceener/spotify-streamable-mcp-server/blob/main/_spec/heyalice-app.gif?raw=true)
+
+*[Alice](https://heyalice.app) — a desktop AI assistant*
+
+![Claude Desktop Demo](https://github.com/iceener/spotify-streamable-mcp-server/blob/main/_spec/claude-desktop.gif?raw=true)
+
+*Claude Desktop*
 
 ## Features
 
@@ -13,6 +27,14 @@ Built on the [MCP Template](../_template) with OAuth 2.1 PKCE authentication.
 - ✅ **Library** — Save/remove tracks, check if saved
 - ✅ **OAuth 2.1** — Secure PKCE flow with RS token mapping
 - ✅ **Dual Runtime** — Node.js/Bun or Cloudflare Workers
+- ✅ **Production Ready** — Encrypted token storage, rate limiting, multi-user support
+
+### Design Principles
+
+- **LLM-friendly**: Tools don't mirror Spotify's API 1:1 — interfaces are simplified and unified
+- **Batch-first**: Operations use arrays (`queries[]`, `operations[]`) to minimize tool calls
+- **Clear feedback**: Every response includes human-readable `_msg` with what succeeded/failed
+- **Best-effort verification**: Player control verifies device, context, and current track
 
 ## Quick Start
 
