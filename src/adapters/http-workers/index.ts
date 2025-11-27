@@ -24,7 +24,7 @@ export interface WorkerEnv {
   /** KV namespace for token storage */
   TOKENS?: KVNamespace;
   /** Base64url-encoded 32-byte key for AES-256-GCM encryption */
-  TOKENS_ENC_KEY?: string;
+  RS_TOKENS_ENC_KEY?: string;
   /** All other env vars */
   [key: string]: unknown;
 }
@@ -83,8 +83,8 @@ export function initializeWorkerStorage(
   let encrypt: (s: string) => Promise<string>;
   let decrypt: (s: string) => Promise<string>;
 
-  if (env.TOKENS_ENC_KEY) {
-    const encryptor = createEncryptor(env.TOKENS_ENC_KEY);
+  if (env.RS_TOKENS_ENC_KEY) {
+    const encryptor = createEncryptor(env.RS_TOKENS_ENC_KEY);
     encrypt = encryptor.encrypt;
     decrypt = encryptor.decrypt;
     logger.debug('worker_storage', { message: 'KV encryption enabled' });
@@ -94,7 +94,7 @@ export function initializeWorkerStorage(
 
     if (config.NODE_ENV === 'production') {
       logger.warning('worker_storage', {
-        message: 'TOKENS_ENC_KEY not set! KV data is unencrypted.',
+        message: 'RS_TOKENS_ENC_KEY not set! KV data is unencrypted.',
       });
     }
   }
