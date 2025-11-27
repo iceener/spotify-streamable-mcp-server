@@ -1,4 +1,5 @@
 // OAuth discovery endpoints (.well-known)
+// From Spotify MCP
 
 export type AuthorizationServerMetadata = {
   issuer: string;

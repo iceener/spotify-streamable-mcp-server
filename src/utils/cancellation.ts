@@ -6,36 +6,37 @@ export class CancellationError extends Error {
 }
 
 export class CancellationToken {
-  private isCancelledInternal = false;
-  private readonly listeners: Array<() => void> = [];
+  private _isCancelled = false;
+  private _listeners: (() => void)[] = [];
 
   get isCancelled(): boolean {
-    return this.isCancelledInternal;
+    return this._isCancelled;
   }
 
   cancel(): void {
-    if (this.isCancelledInternal) {
-      return;
-    }
-    this.isCancelledInternal = true;
-    for (const listener of this.listeners) {
+    if (this._isCancelled) return;
+
+    this._isCancelled = true;
+    this._listeners.forEach((listener) => {
       try {
         listener();
-      } catch {}
-    }
-    this.listeners.length = 0;
+      } catch (error) {
+        console.error('Error in cancellation listener:', error);
+      }
+    });
+    this._listeners.length = 0;
   }
 
   onCancelled(listener: () => void): void {
-    if (this.isCancelledInternal) {
+    if (this._isCancelled) {
       listener();
       return;
     }
-    this.listeners.push(listener);
+    this._listeners.push(listener);
   }
 
   throwIfCancelled(): void {
-    if (this.isCancelledInternal) {
+    if (this._isCancelled) {
       throw new CancellationError();
     }
   }
@@ -51,7 +52,7 @@ export async function withCancellation<T>(
 ): Promise<T> {
   token.throwIfCancelled();
 
-  return new Promise<T>((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     let completed = false;
 
     token.onCancelled(() => {

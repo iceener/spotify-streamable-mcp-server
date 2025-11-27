@@ -1,17 +1,21 @@
+/**
+ * Spotify catalog search service.
+ */
+
 import { z } from 'zod';
 import {
   MinimalEntityCodec,
   SearchResponseCodec,
   TrackCodec,
-} from '../../types/spotify.codecs.ts';
-import { mapStatusToCode } from '../../utils/http-result.ts';
+} from '../../types/spotify.codecs.js';
+import { mapStatusToCode } from '../../utils/http-result.js';
 import {
   toSlimAlbum,
   toSlimArtist,
   toSlimPlaylist,
   toSlimTrack,
-} from '../../utils/mappers.ts';
-import { getSpotifyAppClient } from './sdk.ts';
+} from '../../utils/mappers.js';
+import { getSpotifyAppClient } from './sdk.js';
 
 export type SearchParams = {
   q: string;

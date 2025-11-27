@@ -1,143 +1,115 @@
 // Hono adapter for OAuth routes
+// Provider-agnostic version from Spotify MCP
 
 import type { HttpBindings } from '@hono/node-server';
 import { Hono } from 'hono';
-import type { UnifiedConfig } from '../../shared/config/env.ts';
-import { handleRegister, handleRevoke } from '../../shared/oauth/endpoints.ts';
+import type { UnifiedConfig } from '../../shared/config/env.js';
+import { handleRegister, handleRevoke } from '../../shared/oauth/endpoints.js';
 import {
   handleAuthorize,
-  handleSpotifyCallback,
+  handleProviderCallback,
   handleToken,
-} from '../../shared/oauth/flow.ts';
-import type { TokenStore } from '../../shared/storage/interface.ts';
+} from '../../shared/oauth/flow.js';
+import {
+  buildFlowOptions,
+  buildOAuthConfig,
+  buildProviderConfig,
+  buildTokenInput,
+  parseAuthorizeInput,
+  parseCallbackInput,
+  parseTokenInput,
+} from '../../shared/oauth/input-parsers.js';
+import type { TokenStore } from '../../shared/storage/interface.js';
+import { sharedLogger as logger } from '../../shared/utils/logger.js';
 
 export function buildOAuthRoutes(
   store: TokenStore,
   config: UnifiedConfig,
 ): Hono<{ Bindings: HttpBindings }> {
   const app = new Hono<{ Bindings: HttpBindings }>();
+  const providerConfig = buildProviderConfig(config);
+  const oauthConfig = buildOAuthConfig(config);
 
   app.get('/authorize', async (c) => {
+    logger.debug('oauth_hono', { message: 'Authorize request received' });
+
     try {
       const url = new URL(c.req.url);
-      const here = new URL(c.req.url);
-      const baseUrl = `${here.protocol}//${here.host}`;
+      const input = parseAuthorizeInput(url);
+      const options = buildFlowOptions(url, config);
 
       const result = await handleAuthorize(
-        {
-          codeChallenge: url.searchParams.get('code_challenge') || '',
-          codeChallengeMethod: url.searchParams.get('code_challenge_method') || '',
-          redirectUri: url.searchParams.get('redirect_uri') || '',
-          requestedScope: url.searchParams.get('scope') ?? undefined,
-          state: url.searchParams.get('state') ?? undefined,
-          sid: url.searchParams.get('sid') ?? undefined,
-        },
+        input,
         store,
-        {
-          clientId: config.SPOTIFY_CLIENT_ID,
-          clientSecret: config.SPOTIFY_CLIENT_SECRET,
-          accountsUrl: config.SPOTIFY_ACCOUNTS_URL,
-          oauthScopes: config.OAUTH_SCOPES,
-        },
-        {
-          redirectUri: config.OAUTH_REDIRECT_URI,
-          redirectAllowlist: config.OAUTH_REDIRECT_ALLOWLIST,
-          redirectAllowAll: config.OAUTH_REDIRECT_ALLOW_ALL,
-        },
-        {
-          baseUrl,
-          isDev: config.NODE_ENV === 'development',
-        },
+        providerConfig,
+        oauthConfig,
+        options,
       );
 
+      logger.info('oauth_hono', { message: 'Authorize redirect' });
       return c.redirect(result.redirectTo, 302);
     } catch (error) {
+      logger.error('oauth_hono', {
+        message: 'Authorize failed',
+        error: (error as Error).message,
+      });
       return c.text((error as Error).message || 'Authorization failed', 400);
     }
   });
 
-  app.get('/spotify/callback', async (c) => {
+  app.get('/oauth/callback', async (c) => {
+    logger.debug('oauth_hono', { message: 'Callback request received' });
+
     try {
       const url = new URL(c.req.url);
-      const code = url.searchParams.get('code');
-      const state = url.searchParams.get('state');
+      const { code, state } = parseCallbackInput(url);
 
       if (!code || !state) {
-        return c.text('invalid_callback', 400);
+        return c.text('invalid_callback: missing code or state', 400);
       }
 
-      const here = new URL(c.req.url);
-      const baseUrl = `${here.protocol}//${here.host}`;
+      const options = buildFlowOptions(url, config);
 
-      const result = await handleSpotifyCallback(
-        {
-          providerCode: code,
-          compositeState: state,
-        },
+      const result = await handleProviderCallback(
+        { providerCode: code, compositeState: state },
         store,
-        {
-          clientId: config.SPOTIFY_CLIENT_ID,
-          clientSecret: config.SPOTIFY_CLIENT_SECRET,
-          accountsUrl: config.SPOTIFY_ACCOUNTS_URL,
-          oauthScopes: config.OAUTH_SCOPES,
-        },
-        {
-          redirectUri: config.OAUTH_REDIRECT_URI,
-          redirectAllowlist: config.OAUTH_REDIRECT_ALLOWLIST,
-          redirectAllowAll: config.OAUTH_REDIRECT_ALLOW_ALL,
-        },
-        {
-          baseUrl,
-          isDev: config.NODE_ENV === 'development',
-        },
+        providerConfig,
+        oauthConfig,
+        options,
       );
 
-      console.log('[CALLBACK] Success! Redirecting to:', result.redirectTo);
-
+      logger.info('oauth_hono', { message: 'Callback success' });
       return c.redirect(result.redirectTo, 302);
     } catch (error) {
-      console.error('[CALLBACK] Error:', error);
+      logger.error('oauth_hono', {
+        message: 'Callback failed',
+        error: (error as Error).message,
+      });
       return c.text((error as Error).message || 'Callback failed', 500);
     }
   });
 
   app.post('/token', async (c) => {
-    console.log('[TOKEN] Hit /token endpoint');
+    logger.debug('oauth_hono', { message: 'Token request received' });
+
     try {
-      const contentType = c.req.header('content-type') || '';
-      const form = new URLSearchParams(
-        contentType.includes('application/x-www-form-urlencoded')
-          ? await c.req.text().then((t) => Object.fromEntries(new URLSearchParams(t)))
-          : ((await c.req.json().catch(() => ({}))) as Record<string, string>),
-      );
+      const form = await parseTokenInput(c.req.raw);
+      const tokenInput = buildTokenInput(form);
 
-      const grant = form.get('grant_type');
-      console.log('[TOKEN] Grant type:', grant);
-
-      let result;
-      if (grant === 'refresh_token') {
-        result = await handleToken(
-          {
-            grant: 'refresh_token',
-            refreshToken: form.get('refresh_token') || '',
-          },
-          store,
-        );
-      } else if (grant === 'authorization_code') {
-        result = await handleToken(
-          {
-            grant: 'authorization_code',
-            code: form.get('code') || '',
-            codeVerifier: form.get('code_verifier') || '',
-          },
-          store,
-        );
-      } else {
-        return c.json({ error: 'unsupported_grant_type' }, 400);
+      if ('error' in tokenInput) {
+        return c.json({ error: tokenInput.error }, 400);
       }
 
+      // Pass providerConfig for refresh_token grant to enable provider token refresh
+      const result = await handleToken(tokenInput, store, providerConfig);
+
+      logger.info('oauth_hono', { message: 'Token exchange success' });
       return c.json(result);
     } catch (error) {
+      logger.error('oauth_hono', {
+        message: 'Token exchange failed',
+        error: (error as Error).message,
+      });
       return c.json({ error: (error as Error).message || 'invalid_grant' }, 400);
     }
   });
@@ -150,8 +122,9 @@ export function buildOAuthRoutes(
   app.post('/register', async (c) => {
     try {
       const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-      const here = new URL(c.req.url);
-      const baseUrl = `${here.protocol}//${here.host}`;
+      const url = new URL(c.req.url);
+
+      logger.debug('oauth_hono', { message: 'Register request' });
 
       const result = await handleRegister(
         {
@@ -159,10 +132,11 @@ export function buildOAuthRoutes(
             ? (body.redirect_uris as string[])
             : undefined,
         },
-        baseUrl,
+        url.origin,
         config.OAUTH_REDIRECT_URI,
       );
 
+      logger.info('oauth_hono', { message: 'Client registered' });
       return c.json(result, 201);
     } catch (error) {
       return c.json({ error: (error as Error).message }, 400);

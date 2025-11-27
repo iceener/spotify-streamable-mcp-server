@@ -54,6 +54,7 @@ export type PlayerStateCodecType = z.infer<typeof PlayerStateCodec>;
 // Currently playing
 export const CurrentlyPlayingCodec = z.object({
   item: TrackCodec.nullable().optional(),
+  is_playing: z.boolean().optional(),
 });
 export type CurrentlyPlayingCodecType = z.infer<typeof CurrentlyPlayingCodec>;
 

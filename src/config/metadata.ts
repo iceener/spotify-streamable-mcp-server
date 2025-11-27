@@ -1,19 +1,29 @@
+/**
+ * Centralized metadata for the Spotify MCP server.
+ * Used for server info and tool descriptions.
+ */
+
 export const serverMetadata = {
   title: 'Spotify Music',
   instructions: `Use these tools to find music, get the current player status, control and transfer playback, and manage playlists and saved songs.
 
 Tools
 - search_catalog: Find songs, artists, albums, or playlists. Inputs: queries[], types[album|artist|playlist|track], optional market (2-letter), limit (1-50), offset (0-1000), include_external['audio']. Returns per-query ordered items (slim fields like id, name, uri; tracks include artists).
-- player_status: Read current player, available devices, queue, and current track. Use this first to discover device_id before control.
+- player_status: Read current player, available devices, queue, and current track. Use this first to discover device_id before control. Returns devices with their IDs.
 - spotify_control: Batch control with operations[]. action ∈ {play,pause,next,previous,seek,volume,shuffle,repeat,transfer,queue}. Provide matching params (position_ms, volume_percent, repeat, device_id, context_uri/uris, offset, queue_uri, transfer_play). Optional parallel=true runs operations concurrently. The tool automatically fetches player status after actions and reports whether playback is active, the target device, and current volume. Before transfer, call player_status to pick a device; if no active device exists, ask the user to open Spotify.
 - spotify_playlist: Manage playlists. action ∈ {list_user,get,items,create,update_details,add_items,remove_items,reorder_items}.
 - spotify_library: Manage saved songs. action ∈ {tracks_get,tracks_add,tracks_remove,tracks_contains}.
 
- Notes
- - If a call returns Unauthorized, ask the user to authenticate and retry.
- - Prefer small limits and minimal polling unless asked to do otherwise.
- - Use player_status to pick device_id before control. If no active device is found, prompt the user to open Spotify and/or transfer to a listed device.
- - After control actions, the tool includes a concise status. For full details, you can still call player_status. If not playing, ask the user to open Spotify or transfer to a listed device.`,
+CRITICAL: device_id
+- device_id is a long alphanumeric hash, NOT a human-readable name
+- NEVER use the device name (like "MacBook Pro" or "iPhone") as device_id — this will fail!
+- Always copy the exact device_id value from player_status → devices[].id or player.device_id
+
+Notes
+- If a call returns Unauthorized, ask the user to authenticate and retry.
+- Prefer small limits and minimal polling unless asked to do otherwise.
+- Use player_status to pick device_id before control. If no active device is found, prompt the user to open Spotify and/or transfer to a listed device.
+- After control actions, the tool includes a concise status. For full details, you can still call player_status. If not playing, ask the user to open Spotify or transfer to a listed device.`,
 } as const;
 
 export const toolsMetadata = {

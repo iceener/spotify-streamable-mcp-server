@@ -1,4 +1,5 @@
 // OAuth flow types and DTOs
+// Provider-agnostic version from Spotify MCP
 
 export type AuthorizeInput = {
   codeChallenge: string;
@@ -22,11 +23,11 @@ export type CallbackInput = {
 export type CallbackResult = {
   redirectTo: string;
   txnId: string;
-  spotifyTokens: {
+  providerTokens: {
     access_token: string;
     refresh_token?: string;
-    expires_at: number;
-    scopes: string[];
+    expires_at?: number;
+    scopes?: string[];
   };
 };
 
@@ -69,7 +70,7 @@ export type RegisterResult = {
   client_name?: string;
 };
 
-export type SpotifyConfig = {
+export type ProviderConfig = {
   clientId?: string;
   clientSecret?: string;
   accountsUrl: string;

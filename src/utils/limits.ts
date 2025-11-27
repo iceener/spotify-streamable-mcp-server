@@ -32,27 +32,22 @@ export const makeTokenBucket = (
   };
 };
 
-export function makeConcurrencyGate(maxConcurrency: number) {
+export const makeConcurrencyGate = (max: number) => {
   let active = 0;
-  const queue: Array<() => void> = [];
+  const queue: (() => void)[] = [];
 
-  return async function withConcurrency<T>(fn: () => Promise<T>): Promise<T> {
-    if (active >= maxConcurrency) {
-      await new Promise<void>((resolve) => {
-        queue.push(resolve);
-      });
+  return async <T>(fn: () => Promise<T>): Promise<T> => {
+    if (active >= max) {
+      await new Promise<void>((resolve) => queue.push(resolve));
     }
 
     active++;
-
     try {
       return await fn();
     } finally {
       active--;
       const next = queue.shift();
-      if (next) {
-        next();
-      }
+      if (next) next();
     }
   };
-}
+};

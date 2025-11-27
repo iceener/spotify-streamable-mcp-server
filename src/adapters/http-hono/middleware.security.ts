@@ -1,16 +1,17 @@
 // Hono adapter for MCP security middleware
+// Provider-agnostic version from Spotify MCP
 
 import { randomUUID } from 'node:crypto';
 import type { HttpBindings } from '@hono/node-server';
 import type { MiddlewareHandler } from 'hono';
-import { ensureSession } from '../../core/session.ts';
-import type { UnifiedConfig } from '../../shared/config/env.ts';
+import type { UnifiedConfig } from '../../shared/config/env.js';
 import {
   buildUnauthorizedChallenge,
   validateOrigin,
   validateProtocolVersion,
-} from '../../shared/mcp/security.ts';
-import { getTokenStore } from '../../shared/storage/singleton.ts';
+} from '../../shared/mcp/security.js';
+import { getTokenStore } from '../../shared/storage/singleton.js';
+import { sharedLogger as logger } from '../../shared/utils/logger.js';
 
 export function createMcpSecurityMiddleware(config: UnifiedConfig): MiddlewareHandler<{
   Bindings: HttpBindings;
@@ -28,16 +29,11 @@ export function createMcpSecurityMiddleware(config: UnifiedConfig): MiddlewareHa
           let sid = c.req.header('Mcp-Session-Id') ?? undefined;
           if (!sid) {
             sid = randomUUID();
-            try {
-              ensureSession(sid);
-            } catch {}
+            logger.debug('mcp_security', { message: 'Generated session ID', sid });
           }
 
           const origin = new URL(c.req.url).origin;
-          const challenge = buildUnauthorizedChallenge({
-            origin,
-            sid,
-          });
+          const challenge = buildUnauthorizedChallenge({ origin, sid });
 
           c.header('Mcp-Session-Id', sid);
           c.header('WWW-Authenticate', challenge.headers['WWW-Authenticate']);
@@ -45,41 +41,71 @@ export function createMcpSecurityMiddleware(config: UnifiedConfig): MiddlewareHa
           return c.json(challenge.body, challenge.status);
         }
 
-        // RS-only: if a Bearer is present but not a known RS token (and fallback not allowed), 401-challenge
-        try {
-          if (config.AUTH_REQUIRE_RS && auth) {
-            const [scheme, token] = auth.split(' ', 2);
-            const bearer =
-              scheme && scheme.toLowerCase() === 'bearer' ? (token || '').trim() : '';
+        // Extract Bearer token and look up provider credentials
+        const [scheme, rsToken] = auth.split(' ', 2);
+        const bearer =
+          scheme && scheme.toLowerCase() === 'bearer' ? (rsToken || '').trim() : '';
 
-            if (bearer) {
-              const store = getTokenStore();
-              const record = await store.getByRsAccess(bearer);
-              const spotify = record?.spotify;
-              if (!spotify && !config.AUTH_ALLOW_DIRECT_BEARER) {
-                let sid = c.req.header('Mcp-Session-Id') ?? undefined;
-                if (!sid) {
-                  sid = randomUUID();
-                }
+        if (bearer) {
+          try {
+            const store = getTokenStore();
+            const record = await store.getByRsAccess(bearer);
+            const provider = record?.provider;
 
-                const origin = new URL(c.req.url).origin;
-                const challenge = buildUnauthorizedChallenge({
-                  origin,
-                  sid,
-                });
+            if (provider) {
+              // Inject auth context into Hono context for MCP routes to use
+              // This will be passed to tool handlers via AsyncLocalStorage
+              const authContext = {
+                strategy: config.AUTH_STRATEGY as
+                  | 'oauth'
+                  | 'bearer'
+                  | 'api_key'
+                  | 'custom'
+                  | 'none',
+                authHeaders: { authorization: auth },
+                resolvedHeaders: { authorization: `Bearer ${provider.access_token}` },
+                providerToken: provider.access_token,
+                provider: {
+                  access_token: provider.access_token,
+                  refresh_token: provider.refresh_token,
+                  expires_at: provider.expires_at,
+                  scopes: provider.scopes,
+                },
+                rsToken: bearer,
+              };
+              (c as unknown as { authContext: typeof authContext }).authContext =
+                authContext;
+            } else if (config.AUTH_REQUIRE_RS && !config.AUTH_ALLOW_DIRECT_BEARER) {
+              // RS token not found and RS is required - challenge
+              const sid = c.req.header('Mcp-Session-Id') ?? randomUUID();
 
-                c.header('Mcp-Session-Id', sid);
-                c.header('WWW-Authenticate', challenge.headers['WWW-Authenticate']);
+              const origin = new URL(c.req.url).origin;
+              const challenge = buildUnauthorizedChallenge({ origin, sid });
 
-                return c.json(challenge.body, challenge.status);
-              }
+              c.header('Mcp-Session-Id', sid);
+              c.header('WWW-Authenticate', challenge.headers['WWW-Authenticate']);
+
+              logger.debug('mcp_security', {
+                message: 'RS token not found, challenging',
+              });
+              return c.json(challenge.body, challenge.status);
             }
+          } catch (error) {
+            logger.error('mcp_security', {
+              message: 'Token lookup failed',
+              error: (error as Error).message,
+            });
           }
-        } catch {}
+        }
       }
 
       return next();
     } catch (error) {
+      logger.error('mcp_security', {
+        message: 'Security check failed',
+        error: (error as Error).message,
+      });
+
       return c.json(
         {
           jsonrpc: '2.0',

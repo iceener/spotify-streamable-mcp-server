@@ -1,7 +1,8 @@
 // Framework-agnostic OAuth endpoint handlers
+// From Spotify MCP
 
-import { generateOpaqueToken } from './flow.ts';
-import type { RegisterInput, RegisterResult } from './types.ts';
+import { generateOpaqueToken } from './flow.js';
+import type { RegisterInput, RegisterResult } from './types.js';
 
 /**
  * Handle dynamic client registration (RFC7591)

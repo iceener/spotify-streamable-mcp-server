@@ -1,6 +1,13 @@
+/**
+ * Output schemas for Spotify MCP tools.
+ */
+
 import { z } from 'zod';
 
+// ---------------------------------------------------------------------------
 // Slim entities used across outputs
+// ---------------------------------------------------------------------------
+
 const SlimTrackSchema = z.object({
   type: z.literal('track'),
   id: z.string(),
@@ -50,7 +57,10 @@ const SlimDeviceSchema = z.object({
 });
 export type SlimDevice = z.infer<typeof SlimDeviceSchema>;
 
-// Spotify search tool output (batch)
+// ---------------------------------------------------------------------------
+// Search Output
+// ---------------------------------------------------------------------------
+
 export const SpotifySearchBatchOutput = z.object({
   _msg: z.string(),
   queries: z.array(z.string()),
@@ -75,7 +85,10 @@ export const SpotifySearchBatchOutput = z.object({
 });
 export type SpotifySearchBatchOutput = z.infer<typeof SpotifySearchBatchOutput>;
 
-// Spotify status tool output
+// ---------------------------------------------------------------------------
+// Status Output
+// ---------------------------------------------------------------------------
+
 export const SpotifyStatusOutput = z.object({
   _msg: z.string().optional(),
   player: z
@@ -106,7 +119,10 @@ export type SpotifyStatusOutput = z.infer<typeof SpotifyStatusOutput>;
 export const SpotifyStatusOutputObject = SpotifyStatusOutput;
 export type SpotifyStatusOutputObject = SpotifyStatusOutput;
 
-// Spotify control tool output (batch)
+// ---------------------------------------------------------------------------
+// Control Output
+// ---------------------------------------------------------------------------
+
 export const SpotifyControlBatchOutput = z.object({
   _msg: z.string(),
   results: z.array(
@@ -129,7 +145,10 @@ export const SpotifyControlBatchOutput = z.object({
 });
 export type SpotifyControlBatchOutput = z.infer<typeof SpotifyControlBatchOutput>;
 
-// Playlist tool generic object output (stable shape across actions)
+// ---------------------------------------------------------------------------
+// Playlist Output
+// ---------------------------------------------------------------------------
+
 export const SpotifyPlaylistOutputObject = z.object({
   ok: z.boolean(),
   action: z.string(),
@@ -140,7 +159,10 @@ export const SpotifyPlaylistOutputObject = z.object({
 });
 export type SpotifyPlaylistOutputObject = z.infer<typeof SpotifyPlaylistOutputObject>;
 
-// Library tool generic object output (stable shape across actions)
+// ---------------------------------------------------------------------------
+// Library Output
+// ---------------------------------------------------------------------------
+
 export const SpotifyLibraryOutputObject = z.object({
   ok: z.boolean(),
   action: z.string(),
@@ -151,6 +173,13 @@ export const SpotifyLibraryOutputObject = z.object({
 });
 export type SpotifyLibraryOutputObject = z.infer<typeof SpotifyLibraryOutputObject>;
 
-// Example outputs
-export const AddOutputSchema = z.object({ sum: z.number() });
-export type AddOutput = z.infer<typeof AddOutputSchema>;
+// ---------------------------------------------------------------------------
+// Health Output (kept from template)
+// ---------------------------------------------------------------------------
+
+export const HealthOutput = z.object({
+  status: z.enum(['ok', 'degraded', 'error']),
+  timestamp: z.number(),
+  uptime: z.number(),
+});
+export type HealthOutput = z.infer<typeof HealthOutput>;

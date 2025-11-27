@@ -1,226 +1,151 @@
 // Workers adapter for OAuth routes using itty-router
+// Provider-agnostic version from Spotify MCP
 
-import type { Router } from 'itty-router';
-import type { UnifiedConfig } from '../../shared/config/env.ts';
-import { handleRegister, handleRevoke } from '../../shared/oauth/endpoints.ts';
-import {
-  handleAuthorize,
-  handleSpotifyCallback,
-  handleToken,
-} from '../../shared/oauth/flow.ts';
-import type { TokenStore } from '../../shared/storage/interface.ts';
-
-function withCors(response: Response): Response {
-  response.headers.set('Access-Control-Allow-Origin', '*');
-  response.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  response.headers.set('Access-Control-Allow-Headers', '*');
-  return response;
+// itty-router types are complex; use generic interface
+interface IttyRouter {
+  get(path: string, handler: (request: Request) => Promise<Response>): void;
+  post(path: string, handler: (request: Request) => Promise<Response>): void;
 }
 
+import type { UnifiedConfig } from '../../shared/config/env.js';
+import {
+  jsonResponse,
+  oauthError,
+  redirectResponse,
+  textError,
+} from '../../shared/http/response.js';
+import { handleRegister, handleRevoke } from '../../shared/oauth/endpoints.js';
+import {
+  handleAuthorize,
+  handleProviderCallback,
+  handleToken,
+} from '../../shared/oauth/flow.js';
+import {
+  buildFlowOptions,
+  buildOAuthConfig,
+  buildProviderConfig,
+  buildTokenInput,
+  parseAuthorizeInput,
+  parseCallbackInput,
+  parseTokenInput,
+} from '../../shared/oauth/input-parsers.js';
+import type { TokenStore } from '../../shared/storage/interface.js';
+import { sharedLogger as logger } from '../../shared/utils/logger.js';
+
 export function attachOAuthRoutes(
-  router: Router,
+  router: IttyRouter,
   store: TokenStore,
   config: UnifiedConfig,
 ): void {
+  const providerConfig = buildProviderConfig(config);
+  const oauthConfig = buildOAuthConfig(config);
+
   router.get('/authorize', async (request: Request) => {
-    console.log('[WORKERS-AUTHORIZE] Hit /authorize endpoint');
+    logger.debug('oauth_workers', { message: 'Authorize request received' });
+
     try {
       const url = new URL(request.url);
-      const base = url.origin;
+      const sessionId = request.headers.get('Mcp-Session-Id') ?? undefined;
+      const input = parseAuthorizeInput(url, sessionId);
+      const options = buildFlowOptions(url, config);
 
       const result = await handleAuthorize(
-        {
-          codeChallenge: url.searchParams.get('code_challenge') || '',
-          codeChallengeMethod: url.searchParams.get('code_challenge_method') || '',
-          redirectUri: url.searchParams.get('redirect_uri') || '',
-          requestedScope: url.searchParams.get('scope') ?? undefined,
-          state: url.searchParams.get('state') ?? undefined,
-          sid:
-            url.searchParams.get('sid') ||
-            request.headers.get('Mcp-Session-Id') ||
-            undefined,
-        },
+        input,
         store,
-        {
-          clientId: config.SPOTIFY_CLIENT_ID,
-          clientSecret: config.SPOTIFY_CLIENT_SECRET,
-          accountsUrl: config.SPOTIFY_ACCOUNTS_URL,
-          oauthScopes: config.OAUTH_SCOPES,
-        },
-        {
-          redirectUri: config.OAUTH_REDIRECT_URI,
-          redirectAllowlist: config.OAUTH_REDIRECT_ALLOWLIST,
-          redirectAllowAll: config.OAUTH_REDIRECT_ALLOW_ALL,
-        },
-        {
-          baseUrl: base,
-          isDev: config.NODE_ENV === 'development',
-        },
+        providerConfig,
+        oauthConfig,
+        options,
       );
 
-      console.log('[WORKERS-AUTHORIZE] Redirecting to:', result.redirectTo);
-      // Don't use withCors on redirects - redirect headers are immutable
-      return Response.redirect(result.redirectTo, 302);
+      logger.info('oauth_workers', {
+        message: 'Authorize redirect',
+        url: result.redirectTo,
+      });
+      return redirectResponse(result.redirectTo);
     } catch (error) {
-      console.error('[WORKERS-AUTHORIZE] Error:', error);
-      return withCors(
-        new Response((error as Error).message || 'Authorization failed', {
-          status: 400,
-        }),
-      );
+      logger.error('oauth_workers', {
+        message: 'Authorize failed',
+        error: (error as Error).message,
+      });
+      return textError((error as Error).message || 'Authorization failed');
     }
   });
 
-  router.get('/spotify/callback', async (request: Request) => {
-    console.log('[CALLBACK] Hit /spotify/callback');
+  router.get('/oauth/callback', async (request: Request) => {
+    logger.debug('oauth_workers', { message: 'Callback request received' });
+
     try {
       const url = new URL(request.url);
-      const code = url.searchParams.get('code');
-      const state = url.searchParams.get('state');
-
-      console.log('[CALLBACK] Has code:', !!code, 'Has state:', !!state);
+      const { code, state } = parseCallbackInput(url);
 
       if (!code || !state) {
-        return withCors(new Response('invalid_callback', { status: 400 }));
+        return textError('invalid_callback: missing code or state');
       }
 
-      const base = url.origin;
-
-      // Debug: Check if credentials are present (don't log actual values!)
-      console.log('[CALLBACK] Checking credentials...', {
-        hasClientId: !!config.SPOTIFY_CLIENT_ID,
-        hasClientSecret: !!config.SPOTIFY_CLIENT_SECRET,
-        clientIdLength: config.SPOTIFY_CLIENT_ID?.length,
-        clientSecretLength: config.SPOTIFY_CLIENT_SECRET?.length,
-      });
-
-      if (!config.SPOTIFY_CLIENT_ID || !config.SPOTIFY_CLIENT_SECRET) {
-        console.error('[CALLBACK] Missing Spotify credentials!');
-        return withCors(
-          new Response('Server misconfigured: Missing Spotify credentials', {
-            status: 500,
-          }),
-        );
+      if (!config.PROVIDER_CLIENT_ID || !config.PROVIDER_CLIENT_SECRET) {
+        logger.error('oauth_workers', { message: 'Missing provider credentials' });
+        return textError('Server misconfigured: Missing provider credentials', {
+          status: 500,
+        });
       }
 
-      const result = await handleSpotifyCallback(
-        {
-          providerCode: code,
-          compositeState: state,
-        },
+      const options = buildFlowOptions(url, config);
+
+      const result = await handleProviderCallback(
+        { providerCode: code, compositeState: state },
         store,
-        {
-          clientId: config.SPOTIFY_CLIENT_ID,
-          clientSecret: config.SPOTIFY_CLIENT_SECRET,
-          accountsUrl: config.SPOTIFY_ACCOUNTS_URL,
-          oauthScopes: config.OAUTH_SCOPES,
-        },
-        {
-          redirectUri: config.OAUTH_REDIRECT_URI,
-          redirectAllowlist: config.OAUTH_REDIRECT_ALLOWLIST,
-          redirectAllowAll: config.OAUTH_REDIRECT_ALLOW_ALL,
-        },
-        {
-          baseUrl: base,
-          isDev: config.NODE_ENV === 'development',
-        },
+        providerConfig,
+        oauthConfig,
+        options,
       );
 
-      console.log('[WORKERS-CALLBACK] Success! Redirecting to:', result.redirectTo);
-      // Don't use withCors on redirects - redirect headers are immutable
-      return Response.redirect(result.redirectTo, 302);
+      logger.info('oauth_workers', { message: 'Callback success' });
+      return redirectResponse(result.redirectTo);
     } catch (error) {
-      console.error('[WORKERS-CALLBACK] Error:', error);
-      return withCors(
-        new Response((error as Error).message || 'Callback failed', { status: 500 }),
-      );
+      logger.error('oauth_workers', {
+        message: 'Callback failed',
+        error: (error as Error).message,
+      });
+      return textError((error as Error).message || 'Callback failed', { status: 500 });
     }
   });
 
   router.post('/token', async (request: Request) => {
-    console.log('[WORKERS-TOKEN] Hit /token endpoint');
+    logger.debug('oauth_workers', { message: 'Token request received' });
+
     try {
-      const contentType = request.headers.get('content-type') || '';
-      let form: URLSearchParams;
+      const form = await parseTokenInput(request);
+      const tokenInput = buildTokenInput(form);
 
-      if (contentType.includes('application/x-www-form-urlencoded')) {
-        const text = await request.text();
-        form = new URLSearchParams(text);
-      } else {
-        const json = (await request.json().catch(() => ({}))) as Record<string, string>;
-        form = new URLSearchParams(json);
+      if ('error' in tokenInput) {
+        return oauthError(tokenInput.error);
       }
 
-      const grant = form.get('grant_type');
-      const code = form.get('code');
-      console.log(
-        '[WORKERS-TOKEN] Grant:',
-        grant,
-        'Code:',
-        code?.substring(0, 10) + '...',
-      );
+      // Pass providerConfig for refresh_token grant to enable provider token refresh
+      const result = await handleToken(tokenInput, store, providerConfig);
 
-      let result;
-      if (grant === 'refresh_token') {
-        result = await handleToken(
-          {
-            grant: 'refresh_token',
-            refreshToken: form.get('refresh_token') || '',
-          },
-          store,
-        );
-      } else if (grant === 'authorization_code') {
-        result = await handleToken(
-          {
-            grant: 'authorization_code',
-            code: form.get('code') || '',
-            codeVerifier: form.get('code_verifier') || '',
-          },
-          store,
-        );
-      } else {
-        return withCors(
-          new Response(JSON.stringify({ error: 'unsupported_grant_type' }), {
-            status: 400,
-            headers: { 'content-type': 'application/json' },
-          }),
-        );
-      }
-
-      return withCors(
-        new Response(JSON.stringify(result), {
-          headers: { 'content-type': 'application/json' },
-        }),
-      );
+      logger.info('oauth_workers', { message: 'Token exchange success' });
+      return jsonResponse(result);
     } catch (error) {
-      return withCors(
-        new Response(
-          JSON.stringify({ error: (error as Error).message || 'invalid_grant' }),
-          {
-            status: 400,
-            headers: { 'content-type': 'application/json' },
-          },
-        ),
-      );
+      logger.error('oauth_workers', {
+        message: 'Token exchange failed',
+        error: (error as Error).message,
+      });
+      return oauthError((error as Error).message || 'invalid_grant');
     }
   });
 
   router.post('/revoke', async () => {
     const result = await handleRevoke();
-    return withCors(
-      new Response(JSON.stringify(result), {
-        headers: { 'content-type': 'application/json' },
-      }),
-    );
+    return jsonResponse(result);
   });
 
   router.post('/register', async (request: Request) => {
     try {
       const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
       const url = new URL(request.url);
-      const base = url.origin;
 
-      console.log('[REGISTER] Request body:', JSON.stringify(body));
+      logger.debug('oauth_workers', { message: 'Register request' });
 
       const result = await handleRegister(
         {
@@ -236,25 +161,14 @@ export function attachOAuthRoutes(
           client_name:
             typeof body.client_name === 'string' ? body.client_name : undefined,
         },
-        base,
+        url.origin,
         config.OAUTH_REDIRECT_URI,
       );
 
-      console.log('[REGISTER] Response:', JSON.stringify(result));
-
-      return withCors(
-        new Response(JSON.stringify(result), {
-          status: 201,
-          headers: { 'content-type': 'application/json' },
-        }),
-      );
+      logger.info('oauth_workers', { message: 'Client registered' });
+      return jsonResponse(result, { status: 201 });
     } catch (error) {
-      return withCors(
-        new Response(JSON.stringify({ error: (error as Error).message }), {
-          status: 400,
-          headers: { 'content-type': 'application/json' },
-        }),
-      );
+      return oauthError((error as Error).message);
     }
   });
 }

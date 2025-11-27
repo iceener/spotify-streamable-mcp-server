@@ -1,9 +1,13 @@
+/**
+ * Mapper utilities to convert Spotify API responses to slim representations.
+ */
+
 import type {
   MinimalEntityCodecType,
   PlaylistDetailsResponseCodecType,
   PlaylistSimplifiedCodecType,
   TrackCodecType,
-} from '../types/spotify.codecs.ts';
+} from '../types/spotify.codecs.js';
 
 export function toSlimTrack(t: TrackCodecType) {
   return {

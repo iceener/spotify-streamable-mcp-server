@@ -1,4 +1,13 @@
-export type ErrorCode = 'unauthorized' | 'forbidden' | 'rate_limited' | 'bad_response';
+/**
+ * HTTP result utilities for Spotify API error handling.
+ */
+
+export type ErrorCode =
+  | 'unauthorized'
+  | 'forbidden'
+  | 'rate_limited'
+  | 'bad_response'
+  | 'invalid_arguments';
 
 export function mapStatusToCode(status: number): ErrorCode {
   if (status === 401) {

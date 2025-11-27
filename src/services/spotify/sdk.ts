@@ -1,3 +1,8 @@
+/**
+ * Spotify SDK client factory.
+ * Provides user-authenticated Spotify API clients using the template's auth context.
+ */
+
 import {
   type AccessToken,
   ClientCredentialsStrategy,
@@ -6,13 +11,15 @@ import {
   type SdkConfiguration,
   SpotifyApi,
 } from '@spotify/web-api-ts-sdk';
-import { config } from '../../config/env.ts';
-import { getUserBearer } from '../../core/auth.ts';
-import { getCurrentSessionId } from '../../core/context.ts';
-import { ensureSession, getSession } from '../../core/session.ts';
-import { updateSpotifyTokensByRsRefreshToken } from '../../core/tokens-compat.ts';
-import { logger } from '../../utils/logger.ts';
-import { refreshSpotifyTokens } from './oauth.ts';
+import { config } from '../../config/env.js';
+import { getTokenStore } from '../../shared/storage/singleton.js';
+import type { ToolContext } from '../../shared/tools/types.js';
+import { sharedLogger as logger } from '../../shared/utils/logger.js';
+import { refreshSpotifyTokens } from './oauth.js';
+
+// ---------------------------------------------------------------------------
+// Response Validator
+// ---------------------------------------------------------------------------
 
 const responseValidator: IValidateResponses = {
   async validateResponse(response: Response): Promise<void> {
@@ -35,164 +42,178 @@ const responseValidator: IValidateResponses = {
 
 const sdkOptions = { responseValidator } as const;
 
+// ---------------------------------------------------------------------------
+// App Client (Client Credentials - for non-user APIs like search)
+// ---------------------------------------------------------------------------
+
 let appClient: SpotifyApi | null = null;
 
 export function getSpotifyAppClient(): SpotifyApi {
-  if (!config.SPOTIFY_CLIENT_ID || !config.SPOTIFY_CLIENT_SECRET) {
+  const clientId = config.SPOTIFY_CLIENT_ID || config.OAUTH_CLIENT_ID;
+  const clientSecret = config.SPOTIFY_CLIENT_SECRET || config.OAUTH_CLIENT_SECRET;
+
+  if (!clientId || !clientSecret) {
     throw new Error('Spotify client credentials are not configured');
   }
 
   if (!appClient) {
-    const strategy = new ClientCredentialsStrategy(
-      config.SPOTIFY_CLIENT_ID,
-      config.SPOTIFY_CLIENT_SECRET,
-    );
+    const strategy = new ClientCredentialsStrategy(clientId, clientSecret);
     appClient = new SpotifyApi(strategy, sdkOptions);
   }
 
   return appClient;
 }
 
-export async function getSpotifyUserClient(): Promise<SpotifyApi | null> {
-  if (!config.SPOTIFY_CLIENT_ID) {
+// ---------------------------------------------------------------------------
+// User Client (OAuth - for user-specific APIs)
+// ---------------------------------------------------------------------------
+
+/**
+ * Get a Spotify API client for the authenticated user.
+ * Uses the provider token from the tool context.
+ */
+export async function getSpotifyUserClient(
+  context: ToolContext,
+): Promise<SpotifyApi | null> {
+  const clientId = config.SPOTIFY_CLIENT_ID || config.OAUTH_CLIENT_ID;
+
+  if (!clientId) {
     throw new Error('Spotify client id is not configured');
   }
 
-  const accessToken = await getUserBearer();
-  if (!accessToken) {
-    return null;
-  }
+  // Get provider token from context (set by auth middleware)
+  const providerToken = context.providerToken || context.provider?.accessToken;
 
-  const sessionId = getCurrentSessionId();
-  if (!sessionId) {
-    await logger.warning('spotify_sdk', {
-      message: 'getSpotifyUserClient: Missing session id',
+  if (!providerToken) {
+    logger.info('spotify_sdk', {
+      message: 'No provider token in context',
+      sessionId: context.sessionId,
+      hasProviderToken: !!context.providerToken,
+      hasProvider: !!context.provider,
     });
     return null;
   }
 
-  const session = getSession(sessionId);
-  if (!session?.spotify) {
-    await logger.warning('spotify_sdk', {
-      message: 'getSpotifyUserClient: Missing spotify session data',
-      sessionId,
-    });
-    return null;
-  }
+  // Build access token from context
+  const accessToken: AccessToken = {
+    access_token: providerToken,
+    refresh_token: context.provider?.refreshToken || '',
+    token_type: 'Bearer',
+    expires_in: context.provider?.expiresAt
+      ? Math.max(1, Math.round((context.provider.expiresAt - Date.now()) / 1000))
+      : 3600,
+    expires: context.provider?.expiresAt || Date.now() + 3600 * 1000,
+  };
 
-  const strategy = new SessionAuthStrategy(sessionId);
-
+  const strategy = new ContextAuthStrategy(accessToken, context);
   return new SpotifyApi(strategy, sdkOptions);
 }
 
-async function refreshSpotifyAccessToken(
-  sessionId: string,
-  currentToken: AccessToken,
-): Promise<AccessToken> {
-  const session = ensureSession(sessionId);
-  const refreshToken =
-    currentToken.refresh_token || session.spotify?.refresh_token || '';
-  if (!refreshToken) {
-    throw new Error('No Spotify refresh token available for session');
+// ---------------------------------------------------------------------------
+// Context-based Auth Strategy
+// ---------------------------------------------------------------------------
+
+/**
+ * Auth strategy that uses tokens from the request context.
+ * Handles token refresh automatically.
+ */
+class ContextAuthStrategy implements IAuthStrategy {
+  private current: AccessToken;
+  private context: ToolContext;
+
+  constructor(initialToken: AccessToken, context: ToolContext) {
+    this.current = initialToken;
+    this.context = context;
   }
-
-  const refreshed = await refreshSpotifyTokens({ refreshToken });
-  const accessToken = refreshed.access_token?.trim();
-  if (!accessToken) {
-    throw new Error('Spotify refresh payload missing access_token');
-  }
-  const newRefreshToken = refreshed.refresh_token?.trim() || refreshToken;
-  const expiresInSeconds = Number(refreshed.expires_in ?? 3600);
-  const expiresAt = Date.now() + expiresInSeconds * 1000;
-  const scopes = String(refreshed.scope ?? '')
-    .split(' ')
-    .map((v) => v.trim())
-    .filter(Boolean);
-
-  session.spotify = {
-    access_token: accessToken,
-    refresh_token: newRefreshToken,
-    expires_at: expiresAt,
-    scopes: scopes.length ? scopes : session.spotify?.scopes,
-  };
-
-  const rsRefreshToken = session.rs?.refresh_token;
-  if (rsRefreshToken) {
-    updateSpotifyTokensByRsRefreshToken(rsRefreshToken, {
-      access_token: accessToken,
-      refresh_token: newRefreshToken,
-      expires_at: expiresAt,
-      scopes: session.spotify?.scopes,
-    });
-  }
-
-  return {
-    access_token: accessToken,
-    refresh_token: newRefreshToken,
-    token_type: refreshed.token_type ?? currentToken.token_type ?? 'Bearer',
-    expires_in: expiresInSeconds,
-    expires: expiresAt,
-  };
-}
-
-class SessionAuthStrategy implements IAuthStrategy {
-  private current: AccessToken | null = null;
-
-  constructor(private readonly sessionId: string) {}
 
   public setConfiguration(_configuration: SdkConfiguration): void {
-    // No-op: not needed for our session-based approach
+    // No-op: not needed for our context-based approach
   }
 
   public async getOrCreateAccessToken(): Promise<AccessToken> {
-    let token = this.buildAccessTokenFromSession();
     const now = Date.now();
-    if (token.expires && token.expires <= now) {
-      token = await refreshSpotifyAccessToken(this.sessionId, token);
-    } else if (token.expires && token.expires - now < 30_000) {
+
+    // Check if token is expired or about to expire
+    if (this.current.expires && this.current.expires <= now) {
+      return this.refreshToken();
+    }
+
+    // Proactive refresh if within 30 seconds of expiry
+    if (this.current.expires && this.current.expires - now < 30_000) {
       try {
-        token = await refreshSpotifyAccessToken(this.sessionId, token);
+        return await this.refreshToken();
       } catch (error) {
-        await logger.warning('spotify_sdk', {
+        logger.warning('spotify_sdk', {
           message: 'Silent refresh failed, continuing with existing token',
-          sessionId: this.sessionId,
           error: (error as Error).message,
         });
       }
     }
-    this.current = token;
-    return token;
+
+    return this.current;
   }
 
   public async getAccessToken(): Promise<AccessToken | null> {
-    if (!this.current) {
-      try {
-        this.current = this.buildAccessTokenFromSession();
-      } catch {
-        return null;
-      }
-    }
     return this.current;
   }
 
   public removeAccessToken(): void {
-    this.current = null;
+    // No-op: we don't persist tokens in this strategy
   }
 
-  private buildAccessTokenFromSession(): AccessToken {
-    const session = ensureSession(this.sessionId);
-    const spotify = session.spotify;
-    if (!spotify?.access_token) {
-      throw new Error('Spotify access token missing for session');
+  private async refreshToken(): Promise<AccessToken> {
+    const refreshToken =
+      this.current.refresh_token || this.context.provider?.refreshToken;
+
+    if (!refreshToken) {
+      throw new Error('No refresh token available');
     }
-    const expiresAt = spotify.expires_at ?? Date.now() + 60 * 60 * 1000;
-    const expiresIn = Math.max(1, Math.round((expiresAt - Date.now()) / 1000));
-    return {
-      access_token: spotify.access_token,
-      refresh_token: spotify.refresh_token ?? '',
-      token_type: 'Bearer',
-      expires_in: expiresIn,
+
+    const refreshed = await refreshSpotifyTokens({ refreshToken });
+    const accessToken = refreshed.access_token?.trim();
+
+    if (!accessToken) {
+      throw new Error('Spotify refresh payload missing access_token');
+    }
+
+    const newRefreshToken = refreshed.refresh_token?.trim() || refreshToken;
+    const expiresInSeconds = Number(refreshed.expires_in ?? 3600);
+    const expiresAt = Date.now() + expiresInSeconds * 1000;
+
+    // Update the token store if we have an RS token reference
+    const rsToken = this.context.authHeaders?.authorization?.replace('Bearer ', '');
+    if (rsToken) {
+      try {
+        const store = getTokenStore();
+        const record = await store.getByRsAccess(rsToken);
+        if (record) {
+          // Update the token store with refreshed provider tokens
+          await store.storeRsMapping(
+            rsToken,
+            {
+              access_token: accessToken,
+              refresh_token: newRefreshToken,
+              expires_at: expiresAt,
+            },
+            record.rs_refresh_token,
+          );
+        }
+      } catch (error) {
+        logger.warning('spotify_sdk', {
+          message: 'Failed to update token store after refresh',
+          error: (error as Error).message,
+        });
+      }
+    }
+
+    this.current = {
+      access_token: accessToken,
+      refresh_token: newRefreshToken,
+      token_type: refreshed.token_type ?? 'Bearer',
+      expires_in: expiresInSeconds,
       expires: expiresAt,
     };
+
+    return this.current;
   }
 }

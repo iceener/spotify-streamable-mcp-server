@@ -1,3 +1,6 @@
+// Health check route
+// From Spotify MCP
+
 import type { HttpBindings } from '@hono/node-server';
 import { Hono } from 'hono';
 

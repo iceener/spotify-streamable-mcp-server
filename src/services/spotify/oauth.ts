@@ -1,9 +1,12 @@
-import { config } from '../../config/env.ts';
+/**
+ * Spotify OAuth token refresh functionality.
+ */
+
+import { config } from '../../config/env.js';
 import {
   SpotifyTokenResponseCodec,
   type SpotifyTokenResponseCodecType,
-} from '../../types/spotify.codecs.ts';
-import { toBase64 } from '../../utils/crypto.ts';
+} from '../../types/spotify.codecs.js';
 
 export class SpotifyOAuthError extends Error {
   status?: number;
@@ -20,6 +23,9 @@ type RefreshOptions = {
   signal?: AbortSignal;
 };
 
+/**
+ * Refresh Spotify access token using a refresh token.
+ */
 export async function refreshSpotifyTokens(
   options: RefreshOptions,
 ): Promise<SpotifyTokenResponseCodecType> {
@@ -29,7 +35,10 @@ export async function refreshSpotifyTokens(
     throw new SpotifyOAuthError('Missing Spotify refresh token');
   }
 
-  if (!config.SPOTIFY_CLIENT_ID || !config.SPOTIFY_CLIENT_SECRET) {
+  const clientId = config.SPOTIFY_CLIENT_ID || config.OAUTH_CLIENT_ID;
+  const clientSecret = config.SPOTIFY_CLIENT_SECRET || config.OAUTH_CLIENT_SECRET;
+
+  if (!clientId || !clientSecret) {
     throw new SpotifyOAuthError('Spotify client credentials are not configured');
   }
 
@@ -39,7 +48,7 @@ export async function refreshSpotifyTokens(
     refresh_token: refreshToken,
   }).toString();
 
-  const basic = toBase64(`${config.SPOTIFY_CLIENT_ID}:${config.SPOTIFY_CLIENT_SECRET}`);
+  const basic = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
 
   const response = await fetch(tokenUrl, {
     method: 'POST',

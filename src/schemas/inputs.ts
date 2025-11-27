@@ -1,6 +1,14 @@
+/**
+ * Input schemas for Spotify MCP tools.
+ * All schemas use Zod with descriptions for LLM understanding.
+ */
+
 import { z } from 'zod';
 
+// ---------------------------------------------------------------------------
 // Search
+// ---------------------------------------------------------------------------
+
 export const SpotifySearchInputSchema = z.object({
   queries: z
     .array(z.string().min(1))
@@ -41,7 +49,10 @@ export const SpotifySearchInputSchema = z.object({
 });
 export type SpotifySearchInput = z.infer<typeof SpotifySearchInputSchema>;
 
+// ---------------------------------------------------------------------------
 // Status
+// ---------------------------------------------------------------------------
+
 export const SpotifyStatusInputSchema = z.object({
   include: z
     .array(z.enum(['player', 'devices', 'queue', 'current_track']))
@@ -52,7 +63,10 @@ export const SpotifyStatusInputSchema = z.object({
 });
 export type SpotifyStatusInput = z.infer<typeof SpotifyStatusInputSchema>;
 
+// ---------------------------------------------------------------------------
 // Control
+// ---------------------------------------------------------------------------
+
 export const SpotifyControlInputSchema = z.object({
   operations: z
     .array(
@@ -76,7 +90,7 @@ export const SpotifyControlInputSchema = z.object({
             .string()
             .optional()
             .describe(
-              "Target device. Get via 'player_status' → devices[].id. Required for 'transfer'; optional for others.",
+              "Target device ID — a long alphanumeric hash from player_status → devices[].id or player.device_id. NEVER use device name (like 'MacBook Pro')! Required for 'transfer'; optional for others.",
             ),
           position_ms: z
             .number()
@@ -89,7 +103,10 @@ export const SpotifyControlInputSchema = z.object({
             .max(100)
             .optional()
             .describe('Volume level 0-100 for volume action.'),
-          shuffle: z.boolean().optional().describe('Shuffle on/off for shuffle action.'),
+          shuffle: z
+            .boolean()
+            .optional()
+            .describe('Shuffle on/off for shuffle action.'),
           repeat: z
             .enum(['off', 'track', 'context'])
             .optional()
@@ -139,7 +156,9 @@ export const SpotifyControlInputSchema = z.object({
           transfer_play: z
             .boolean()
             .optional()
-            .describe('When transferring, start playback immediately on the new device.'),
+            .describe(
+              'When transferring, start playback immediately on the new device.',
+            ),
         })
         .superRefine((operation, ctx) => {
           const hasContext = typeof operation.context_uri === 'string';
@@ -160,10 +179,7 @@ export const SpotifyControlInputSchema = z.object({
               path: ['offset', 'uri'],
             });
           }
-          if (
-            typeof operation.offset?.position === 'number' &&
-            operation.offset?.uri
-          ) {
+          if (typeof operation.offset?.position === 'number' && operation.offset?.uri) {
             ctx.addIssue({
               code: z.ZodIssueCode.custom,
               message: "Use only one of 'offset.position' or 'offset.uri'.",
@@ -184,7 +200,10 @@ export const SpotifyControlInputSchema = z.object({
 });
 export type SpotifyControlInput = z.infer<typeof SpotifyControlInputSchema>;
 
+// ---------------------------------------------------------------------------
 // Playlist
+// ---------------------------------------------------------------------------
+
 export const SpotifyPlaylistInputSchema = z.object({
   action: z
     .enum([
@@ -280,7 +299,10 @@ export const SpotifyPlaylistInputSchema = z.object({
 });
 export type SpotifyPlaylistInput = z.infer<typeof SpotifyPlaylistInputSchema>;
 
+// ---------------------------------------------------------------------------
 // Library
+// ---------------------------------------------------------------------------
+
 export const SpotifyLibraryInputSchema = z.object({
   action: z
     .enum(['tracks_get', 'tracks_add', 'tracks_remove', 'tracks_contains'])
@@ -313,7 +335,3 @@ export const SpotifyLibraryInputSchema = z.object({
     .describe('Spotify track IDs (not URIs). Required for tracks_add/remove/contains.'),
 });
 export type SpotifyLibraryInput = z.infer<typeof SpotifyLibraryInputSchema>;
-
-// Example tool inputs
-export const AddInputSchema = z.object({ a: z.number(), b: z.number() }).strict();
-export type AddInput = z.infer<typeof AddInputSchema>;

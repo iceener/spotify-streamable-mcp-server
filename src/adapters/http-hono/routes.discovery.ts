@@ -1,92 +1,50 @@
 // Hono adapter for OAuth discovery routes
+// From Spotify MCP
 
 import type { HttpBindings } from '@hono/node-server';
 import { Hono } from 'hono';
-import type { UnifiedConfig } from '../../shared/config/env.ts';
+import type { UnifiedConfig } from '../../shared/config/env.js';
 import {
-  buildAuthorizationServerMetadata,
-  buildProtectedResourceMetadata,
-} from '../../shared/oauth/discovery.ts';
+  createDiscoveryHandlers,
+  nodeDiscoveryStrategy,
+} from '../../shared/oauth/discovery-handlers.js';
 
 export function buildDiscoveryRoutes(
   config: UnifiedConfig,
 ): Hono<{ Bindings: HttpBindings }> {
   const app = new Hono<{ Bindings: HttpBindings }>();
+  const { authorizationMetadata, protectedResourceMetadata } = createDiscoveryHandlers(
+    config,
+    nodeDiscoveryStrategy,
+  );
 
   if (config.AUTH_ENABLED) {
     app.get('/.well-known/oauth-protected-resource', (c) => {
       const here = new URL(c.req.url);
-      const authPort = config.PORT + 1;
-      const defaultDiscovery = `${here.protocol}//${here.hostname}:${authPort}/.well-known/oauth-authorization-server`;
       const sid = here.searchParams.get('sid') ?? undefined;
-      const resourceBase = `${here.protocol}//${here.host}/mcp`;
-
-      const metadata = buildProtectedResourceMetadata(
-        resourceBase,
-        config.AUTH_DISCOVERY_URL || defaultDiscovery,
-        sid,
-      );
-
+      const metadata = protectedResourceMetadata(here, sid);
       return c.json(metadata);
     });
 
     app.get('/mcp/.well-known/oauth-protected-resource', (c) => {
       const here = new URL(c.req.url);
-      const authPort = config.PORT + 1;
-      const defaultDiscovery = `${here.protocol}//${here.hostname}:${authPort}/.well-known/oauth-authorization-server`;
       const sid = here.searchParams.get('sid') ?? undefined;
-      const resourceBase = `${here.protocol}//${here.host}/mcp`;
-
-      const metadata = buildProtectedResourceMetadata(
-        resourceBase,
-        config.AUTH_DISCOVERY_URL || defaultDiscovery,
-        sid,
-      );
-
+      const metadata = protectedResourceMetadata(here, sid);
       return c.json(metadata);
     });
   }
 
   app.get('/.well-known/oauth-authorization-server', (c) => {
     const here = new URL(c.req.url);
-    const authPort = config.PORT + 1;
-    const base = `${here.protocol}//${here.hostname}:${authPort}`;
-
-    const scopes = config.OAUTH_SCOPES.split(' ').filter(Boolean);
-
-    const metadata = buildAuthorizationServerMetadata(base, scopes, {
-      authorizationEndpoint: config.OAUTH_AUTHORIZATION_URL,
-      tokenEndpoint: config.OAUTH_TOKEN_URL,
-      revocationEndpoint: config.OAUTH_REVOCATION_URL,
-    });
-
+    const metadata = authorizationMetadata(here);
     return c.json(metadata);
   });
 
   app.get('/mcp/.well-known/oauth-authorization-server', (c) => {
     const here = new URL(c.req.url);
-    const authPort = config.PORT + 1;
-    const base = `${here.protocol}//${here.hostname}:${authPort}`;
-
-    const scopes = config.OAUTH_SCOPES.split(' ').filter(Boolean);
-
-    const metadata = buildAuthorizationServerMetadata(base, scopes, {
-      authorizationEndpoint: config.OAUTH_AUTHORIZATION_URL,
-      tokenEndpoint: config.OAUTH_TOKEN_URL,
-      revocationEndpoint: config.OAUTH_REVOCATION_URL,
-    });
-
+    const metadata = authorizationMetadata(here);
     return c.json(metadata);
   });
 
   return app;
 }
-
-
-
-
-
-
-
-
-

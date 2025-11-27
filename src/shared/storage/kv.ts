@@ -1,14 +1,15 @@
 // Cloudflare KV storage with encryption support
+// Provider-agnostic version from Spotify MCP
 
 import type {
+  ProviderTokens,
   RsRecord,
   SessionRecord,
   SessionStore,
-  SpotifyTokens,
   TokenStore,
   Transaction,
-} from './interface.ts';
-import { MemorySessionStore, MemoryTokenStore } from './memory.ts';
+} from './interface.js';
+import { MemorySessionStore, MemoryTokenStore } from './memory.js';
 
 // Cloudflare KV namespace type
 type KVNamespace = {
@@ -90,19 +91,19 @@ export class KvTokenStore implements TokenStore {
 
   async storeRsMapping(
     rsAccess: string,
-    spotify: SpotifyTokens,
+    provider: ProviderTokens,
     rsRefresh?: string,
   ): Promise<RsRecord> {
     const rec: RsRecord = {
       rs_access_token: rsAccess,
       rs_refresh_token: rsRefresh ?? crypto.randomUUID(),
-      spotify: { ...spotify },
+      provider: { ...provider },
       created_at: Date.now(),
     };
 
     // CRITICAL: Store in memory fallback FIRST
     // If KV fails (quota/network), memory still has it
-    await this.fallback.storeRsMapping(rsAccess, spotify, rsRefresh);
+    await this.fallback.storeRsMapping(rsAccess, provider, rsRefresh);
 
     // Then try KV (may fail due to quota)
     try {
@@ -133,23 +134,23 @@ export class KvTokenStore implements TokenStore {
 
   async updateByRsRefresh(
     rsRefresh: string,
-    spotify: SpotifyTokens,
+    provider: ProviderTokens,
     maybeNewRsAccess?: string,
   ): Promise<RsRecord | null> {
     const existing = await this.getJson<RsRecord>(`rs:refresh:${rsRefresh}`);
     if (!existing) {
-      return this.fallback.updateByRsRefresh(rsRefresh, spotify, maybeNewRsAccess);
+      return this.fallback.updateByRsRefresh(rsRefresh, provider, maybeNewRsAccess);
     }
 
     const next: RsRecord = {
       rs_access_token: maybeNewRsAccess || existing.rs_access_token,
       rs_refresh_token: rsRefresh,
-      spotify: { ...spotify },
+      provider: { ...provider },
       created_at: Date.now(),
     };
 
     // Update memory fallback first
-    await this.fallback.updateByRsRefresh(rsRefresh, spotify, maybeNewRsAccess);
+    await this.fallback.updateByRsRefresh(rsRefresh, provider, maybeNewRsAccess);
 
     // Then try KV (may fail due to quota)
     try {

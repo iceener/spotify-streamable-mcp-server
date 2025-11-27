@@ -1,4 +1,5 @@
 // MCP security: origin validation, protocol version, and challenge builder
+// From Spotify MCP
 
 export function validateOrigin(headers: Headers, isDev: boolean): void {
   const origin = headers.get('Origin') || headers.get('origin');
@@ -103,4 +104,3 @@ export function buildUnauthorizedChallenge(args: {
     },
   };
 }
-

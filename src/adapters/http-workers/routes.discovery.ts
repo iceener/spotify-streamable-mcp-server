@@ -1,64 +1,34 @@
 // Workers adapter for OAuth discovery routes using itty-router
+// From Spotify MCP
 
-import type { Router } from 'itty-router';
-import type { UnifiedConfig } from '../../shared/config/env.ts';
-import {
-  buildAuthorizationServerMetadata,
-  buildProtectedResourceMetadata,
-} from '../../shared/oauth/discovery.ts';
-
-function withCors(response: Response): Response {
-  response.headers.set('Access-Control-Allow-Origin', '*');
-  response.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  response.headers.set('Access-Control-Allow-Headers', '*');
-  return response;
+// itty-router types are complex; use generic interface
+interface IttyRouter {
+  get(path: string, handler: (request: Request) => Promise<Response>): void;
+  post(path: string, handler: (request: Request) => Promise<Response>): void;
 }
 
-export function attachDiscoveryRoutes(router: Router, config: UnifiedConfig): void {
+import type { UnifiedConfig } from '../../shared/config/env.js';
+import { jsonResponse } from '../../shared/http/response.js';
+import {
+  createDiscoveryHandlers,
+  workerDiscoveryStrategy,
+} from '../../shared/oauth/discovery-handlers.js';
+
+export function attachDiscoveryRoutes(router: IttyRouter, config: UnifiedConfig): void {
+  const { authorizationMetadata, protectedResourceMetadata } = createDiscoveryHandlers(
+    config,
+    workerDiscoveryStrategy,
+  );
+
   router.get('/.well-known/oauth-authorization-server', async (request: Request) => {
-    const base = new URL(request.url).origin;
-    const scopes = config.OAUTH_SCOPES.split(/\s+/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-
-    const metadata = buildAuthorizationServerMetadata(base, scopes, {
-      authorizationEndpoint: config.OAUTH_AUTHORIZATION_URL,
-      tokenEndpoint: config.OAUTH_TOKEN_URL,
-      revocationEndpoint: config.OAUTH_REVOCATION_URL,
-    });
-
-    return withCors(
-      new Response(JSON.stringify(metadata), {
-        headers: { 'content-type': 'application/json; charset=utf-8' },
-      }),
-    );
+    const metadata = authorizationMetadata(new URL(request.url));
+    return jsonResponse(metadata);
   });
 
   router.get('/.well-known/oauth-protected-resource', async (request: Request) => {
     const here = new URL(request.url);
-    const base = here.origin;
     const sid = here.searchParams.get('sid') ?? undefined;
-    const resourceBase = `${base}/mcp`;
-
-    const metadata = buildProtectedResourceMetadata(
-      resourceBase,
-      `${base}/.well-known/oauth-authorization-server`,
-      sid,
-    );
-
-    return withCors(
-      new Response(JSON.stringify(metadata), {
-        headers: { 'content-type': 'application/json; charset=utf-8' },
-      }),
-    );
+    const metadata = protectedResourceMetadata(here, sid);
+    return jsonResponse(metadata);
   });
 }
-
-
-
-
-
-
-
-
-

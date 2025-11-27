@@ -1,19 +1,14 @@
 // Workers adapter for MCP security
+// Provider-agnostic version from Spotify MCP
 
-import type { UnifiedConfig } from '../../shared/config/env.ts';
+import type { UnifiedConfig } from '../../shared/config/env.js';
+import { withCors } from '../../shared/http/cors.js';
 import {
   buildUnauthorizedChallenge,
   validateOrigin,
   validateProtocolVersion,
-} from '../../shared/mcp/security.ts';
-import type { TokenStore } from '../../shared/storage/interface.ts';
-
-function withCors(response: Response): Response {
-  response.headers.set('Access-Control-Allow-Origin', '*');
-  response.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  response.headers.set('Access-Control-Allow-Headers', '*');
-  return response;
-}
+} from '../../shared/mcp/security.js';
+import type { TokenStore } from '../../shared/storage/interface.js';
 
 /**
  * Check if request needs authentication and challenge if missing
@@ -37,9 +32,12 @@ export async function checkAuthAndChallenge(
 
     const resp = new Response(JSON.stringify(challenge.body), {
       status: challenge.status,
+      headers: {
+        'Content-Type': 'application/json',
+        'Mcp-Session-Id': sid,
+        'WWW-Authenticate': challenge.headers['WWW-Authenticate'],
+      },
     });
-    resp.headers.set('Mcp-Session-Id', sid);
-    resp.headers.set('WWW-Authenticate', challenge.headers['WWW-Authenticate']);
     return withCors(resp);
   }
 
@@ -54,40 +52,40 @@ export async function checkAuthAndChallenge(
   // Challenge if no auth
   if (!authHeader && !apiKeyHeader) {
     const origin = new URL(request.url).origin;
-    const challenge = buildUnauthorizedChallenge({
-      origin,
-      sid,
-    });
+    const challenge = buildUnauthorizedChallenge({ origin, sid });
 
     const resp = new Response(JSON.stringify(challenge.body), {
       status: challenge.status,
+      headers: {
+        'Content-Type': 'application/json',
+        'Mcp-Session-Id': sid,
+        'WWW-Authenticate': challenge.headers['WWW-Authenticate'],
+      },
     });
-    resp.headers.set('Mcp-Session-Id', sid);
-    resp.headers.set('WWW-Authenticate', challenge.headers['WWW-Authenticate']);
     return withCors(resp);
   }
 
   // Check RS token if required
   if (config.AUTH_REQUIRE_RS && authHeader) {
-    const m = authHeader.match(/^\s*Bearer\s+(.+)$/i);
-    const bearer = m?.[1];
+    const match = authHeader.match(/^\s*Bearer\s+(.+)$/i);
+    const bearer = match?.[1];
 
     if (bearer) {
       const record = await store.getByRsAccess(bearer);
-      const hasMapping = !!record?.spotify?.access_token;
+      const hasMapping = !!record?.provider?.access_token;
 
       if (!hasMapping && !config.AUTH_ALLOW_DIRECT_BEARER) {
         const origin = new URL(request.url).origin;
-        const challenge = buildUnauthorizedChallenge({
-          origin,
-          sid,
-        });
+        const challenge = buildUnauthorizedChallenge({ origin, sid });
 
         const resp = new Response(JSON.stringify(challenge.body), {
           status: challenge.status,
+          headers: {
+            'Content-Type': 'application/json',
+            'Mcp-Session-Id': sid,
+            'WWW-Authenticate': challenge.headers['WWW-Authenticate'],
+          },
         });
-        resp.headers.set('Mcp-Session-Id', sid);
-        resp.headers.set('WWW-Authenticate', challenge.headers['WWW-Authenticate']);
         return withCors(resp);
       }
     }
@@ -95,12 +93,3 @@ export async function checkAuthAndChallenge(
 
   return null;
 }
-
-
-
-
-
-
-
-
-

@@ -1,6 +1,7 @@
 // Unified storage interfaces for both Node.js and Cloudflare Workers
+// Provider-agnostic version from Spotify MCP
 
-export type SpotifyTokens = {
+export type ProviderTokens = {
   access_token: string;
   refresh_token?: string;
   expires_at?: number;
@@ -10,7 +11,7 @@ export type SpotifyTokens = {
 export type RsRecord = {
   rs_access_token: string;
   rs_refresh_token: string;
-  spotify: SpotifyTokens;
+  provider: ProviderTokens;
   created_at: number;
 };
 
@@ -20,13 +21,13 @@ export type Transaction = {
   scope?: string;
   createdAt: number;
   sid?: string;
-  spotify?: SpotifyTokens;
+  provider?: ProviderTokens;
 };
 
 export type SessionRecord = {
   rs_access_token?: string;
   rs_refresh_token?: string;
-  spotify?: SpotifyTokens | null;
+  provider?: ProviderTokens | null;
   created_at: number;
 };
 
@@ -38,7 +39,7 @@ export interface TokenStore {
   // RS token mapping
   storeRsMapping(
     rsAccess: string,
-    spotify: SpotifyTokens,
+    provider: ProviderTokens,
     rsRefresh?: string,
   ): Promise<RsRecord>;
 
@@ -48,7 +49,7 @@ export interface TokenStore {
 
   updateByRsRefresh(
     rsRefresh: string,
-    spotify: SpotifyTokens,
+    provider: ProviderTokens,
     maybeNewRsAccess?: string,
   ): Promise<RsRecord | null>;
 
@@ -79,12 +80,3 @@ export interface SessionStore {
 
   delete(sessionId: string): Promise<void>;
 }
-
-
-
-
-
-
-
-
-

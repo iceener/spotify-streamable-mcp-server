@@ -1,3 +1,6 @@
+// CORS middleware for Hono
+// From Spotify MCP
+
 import type { HttpBindings } from '@hono/node-server';
 import type { MiddlewareHandler } from 'hono';
 

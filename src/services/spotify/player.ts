@@ -1,13 +1,20 @@
+/**
+ * Spotify Player API functions.
+ * All functions require a valid Spotify API client.
+ */
+
 import type { SpotifyApi } from '@spotify/web-api-ts-sdk';
 import {
   CurrentlyPlayingCodec,
   DevicesResponseCodec,
   PlayerStateCodec,
   QueueResponseCodec,
-} from '../../types/spotify.codecs.ts';
-import { mapStatusToCode } from '../../utils/http-result.ts';
+} from '../../types/spotify.codecs.js';
 
+// ---------------------------------------------------------------------------
 // Status APIs
+// ---------------------------------------------------------------------------
+
 export async function getPlayerState(api: SpotifyApi) {
   const result = await callWithHandling(() =>
     api.makeRequest<unknown>('GET', 'me/player'),
@@ -42,7 +49,10 @@ export async function getCurrentlyPlaying(api: SpotifyApi) {
   return CurrentlyPlayingCodec.parse(result);
 }
 
+// ---------------------------------------------------------------------------
 // Control APIs
+// ---------------------------------------------------------------------------
+
 export async function play(
   api: SpotifyApi,
   options: {
@@ -131,10 +141,23 @@ export async function queueUri(
   );
 }
 
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
 function callWithHandling<T>(fn: () => Promise<T>): Promise<T> {
   return fn().catch((error) => {
     throw decorateSpotifyError(error);
   });
+}
+
+export type ErrorCode = 'unauthorized' | 'forbidden' | 'rate_limited' | 'bad_response';
+
+function mapStatusToCode(status: number): ErrorCode {
+  if (status === 401) return 'unauthorized';
+  if (status === 403) return 'forbidden';
+  if (status === 429) return 'rate_limited';
+  return 'bad_response';
 }
 
 function decorateSpotifyError(error: unknown): Error {
