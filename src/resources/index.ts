@@ -13,3 +13,4 @@ export function registerResources(_server: McpServer): void {
   // No resources registered yet
   // Add Spotify-specific resources here if needed
 }
+

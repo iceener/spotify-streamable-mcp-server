@@ -40,7 +40,27 @@ const responseValidator: IValidateResponses = {
   },
 };
 
-const sdkOptions = { responseValidator } as const;
+/**
+ * Custom deserializer that handles non-JSON responses gracefully.
+ * The npm version of @spotify/web-api-ts-sdk doesn't catch JSON.parse errors,
+ * but some Spotify endpoints (e.g., queue) return non-JSON responses.
+ */
+const responseDeserializer = {
+  async deserialize<T>(response: Response): Promise<T> {
+    const text = await response.text();
+    if (text.length > 0) {
+      try {
+        return JSON.parse(text) as T;
+      } catch {
+        // Non-JSON response (e.g., queue endpoint) - treat as success
+        return null as T;
+      }
+    }
+    return null as T;
+  },
+};
+
+const sdkOptions = { responseValidator, deserializer: responseDeserializer } as const;
 
 // ---------------------------------------------------------------------------
 // App Client (Client Credentials - for non-user APIs like search)

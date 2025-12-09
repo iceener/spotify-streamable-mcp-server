@@ -112,13 +112,29 @@ async function handleInitialize(
 }
 
 async function handleToolsList(): Promise<JsonRpcResult> {
-  const tools = sharedTools.map((tool) => ({
+  const tools = sharedTools.map((tool) => {
+    // Convert outputSchema (ZodRawShape) to proper JSON Schema with type: "object"
+    let outputSchema: Record<string, unknown> | undefined;
+    if (tool.outputSchema) {
+      // The outputSchema is a ZodRawShape (just properties), wrap it in an object schema
+      const properties: Record<string, unknown> = {};
+      for (const [key, zodType] of Object.entries(tool.outputSchema)) {
+        properties[key] = zodToJsonSchema(zodType as Parameters<typeof zodToJsonSchema>[0]);
+      }
+      outputSchema = {
+        type: 'object',
+        properties,
+      };
+    }
+
+    return {
     name: tool.name,
     description: tool.description,
     inputSchema: zodToJsonSchema(tool.inputSchema),
-    ...(tool.outputSchema && { outputSchema: tool.outputSchema }),
+      ...(outputSchema && { outputSchema }),
     ...(tool.annotations && { annotations: tool.annotations }),
-  }));
+    };
+  });
 
   return { result: { tools } };
 }

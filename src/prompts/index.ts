@@ -13,3 +13,17 @@ export function registerPrompts(_server: McpServer): void {
   // No prompts registered yet
   // Add Spotify-specific prompts here if needed
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+

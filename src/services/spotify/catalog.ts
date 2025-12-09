@@ -135,3 +135,17 @@ export async function searchCatalog(params: SearchParams, _signal?: AbortSignal)
     throw new Error(`Search failed: ${message} [${code}]`);
   }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+

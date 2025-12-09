@@ -142,6 +142,7 @@ export class KvTokenStore implements TokenStore {
       return this.fallback.updateByRsRefresh(rsRefresh, provider, maybeNewRsAccess);
     }
 
+    const rsAccessChanged = maybeNewRsAccess && maybeNewRsAccess !== existing.rs_access_token;
     const next: RsRecord = {
       rs_access_token: maybeNewRsAccess || existing.rs_access_token,
       rs_refresh_token: rsRefresh,
@@ -153,12 +154,22 @@ export class KvTokenStore implements TokenStore {
     await this.fallback.updateByRsRefresh(rsRefresh, provider, maybeNewRsAccess);
 
     // Then try KV (may fail due to quota)
+    // Optimize: only delete old access key if RS access token actually changed
     try {
-      await Promise.all([
-        this.kv.delete(`rs:access:${existing.rs_access_token}`),
-        this.putJson(`rs:access:${next.rs_access_token}`, next),
-        this.putJson(`rs:refresh:${rsRefresh}`, next),
-      ]);
+      if (rsAccessChanged) {
+        // RS access token changed: delete old + write new access + write refresh (3 ops)
+        await Promise.all([
+          this.kv.delete(`rs:access:${existing.rs_access_token}`),
+          this.putJson(`rs:access:${next.rs_access_token}`, next),
+          this.putJson(`rs:refresh:${rsRefresh}`, next),
+        ]);
+      } else {
+        // RS access token unchanged: update both keys in place (2 ops, no delete)
+        await Promise.all([
+          this.putJson(`rs:access:${existing.rs_access_token}`, next),
+          this.putJson(`rs:refresh:${rsRefresh}`, next),
+        ]);
+      }
     } catch (error) {
       console.warn(
         '[KV] Failed to update RS mapping (using memory fallback):',
@@ -196,7 +207,8 @@ export class KvTokenStore implements TokenStore {
   }
 
   async deleteTransaction(txnId: string): Promise<void> {
-    await this.kv.delete(`txn:${txnId}`);
+    // Skip KV delete - transactions have TTL and will auto-expire
+    // This saves 1 write operation per OAuth flow
     await this.fallback.deleteTransaction(txnId);
   }
 
@@ -222,7 +234,8 @@ export class KvTokenStore implements TokenStore {
   }
 
   async deleteCode(code: string): Promise<void> {
-    await this.kv.delete(`code:${code}`);
+    // Skip KV delete - codes have TTL and will auto-expire
+    // This saves 1 write operation per OAuth flow
     await this.fallback.deleteCode(code);
   }
 }
@@ -268,9 +281,13 @@ export class KvSessionStore implements SessionStore {
   }
 
   async ensure(sessionId: string): Promise<void> {
-    const existing = await this.getSession(sessionId);
+    // Memory-only session ensure - no KV writes
+    // Sessions are ephemeral per-isolate state; the actual session state
+    // (sessionStateMap, cancellationRegistry) is already memory-only.
+    // This saves 1 write operation per request with new session ID.
+    const existing = await this.fallback.get(sessionId);
     if (!existing) {
-      await this.putSession(sessionId, { created_at: Date.now() });
+      await this.fallback.put(sessionId, { created_at: Date.now() });
     }
   }
 

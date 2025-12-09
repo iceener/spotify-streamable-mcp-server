@@ -128,6 +128,38 @@ export async function refreshProviderToken(
 /** Token expiry check thresholds */
 const EXPIRY_BUFFER_MS = 60_000; // 1 minute buffer
 
+/** Refresh throttle to prevent redundant KV writes */
+const REFRESH_COOLDOWN_MS = 30_000; // 30 seconds
+const recentlyRefreshed = new Map<string, number>();
+
+/**
+ * Check if a token was recently refreshed (throttle).
+ * Prevents concurrent/repeated refreshes from causing redundant KV writes.
+ */
+function shouldSkipRefresh(rsToken: string): boolean {
+  const lastRefresh = recentlyRefreshed.get(rsToken);
+  if (lastRefresh && Date.now() - lastRefresh < REFRESH_COOLDOWN_MS) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Mark a token as recently refreshed (only call on SUCCESS).
+ */
+function markRefreshed(rsToken: string): void {
+  recentlyRefreshed.set(rsToken, Date.now());
+  // Cleanup old entries to prevent memory leak
+  if (recentlyRefreshed.size > 1000) {
+    const now = Date.now();
+    for (const [key, timestamp] of recentlyRefreshed) {
+      if (now - timestamp > REFRESH_COOLDOWN_MS) {
+        recentlyRefreshed.delete(key);
+      }
+    }
+  }
+}
+
 /**
  * Check if a token is expired or will expire soon.
  *
@@ -170,6 +202,15 @@ export async function ensureFreshToken(
     return { accessToken: record.provider.access_token, wasRefreshed: false };
   }
 
+  // Throttle: skip if this token was recently refreshed
+  // Prevents concurrent requests from triggering multiple refreshes
+  if (shouldSkipRefresh(rsAccessToken)) {
+    logger.debug('oauth_refresh', {
+      message: 'Token refresh throttled (recently refreshed)',
+    });
+    return { accessToken: record.provider.access_token, wasRefreshed: false };
+  }
+
   logger.info('oauth_refresh', {
     message: 'Token near expiry, attempting refresh',
     expiresAt: record.provider.expires_at,
@@ -205,16 +246,25 @@ export async function ensureFreshToken(
     return { accessToken: record.provider.access_token, wasRefreshed: false };
   }
 
+  // Determine if RS access token should rotate
+  // Only rotate when provider refresh_token changed (security trade-off for KV quota)
+  const providerRefreshRotated = result.tokens.refresh_token !== record.provider.refresh_token;
+  const newRsAccess = providerRefreshRotated ? undefined : record.rs_access_token;
+
   // Update token store with new tokens
   try {
     await tokenStore.updateByRsRefresh(
       record.rs_refresh_token,
       result.tokens,
-      record.rs_access_token,
+      newRsAccess,
     );
+
+    // Mark as refreshed ONLY on success (prevents lockout on failure)
+    markRefreshed(rsAccessToken);
 
     logger.info('oauth_refresh', {
       message: 'Token store updated with refreshed tokens',
+      rsAccessRotated: providerRefreshRotated,
     });
 
     return { accessToken: result.tokens.access_token, wasRefreshed: true };

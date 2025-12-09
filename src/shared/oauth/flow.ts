@@ -493,7 +493,13 @@ export async function handleToken(
       }
     }
 
-    const newAccess = generateOpaqueToken(24);
+    // Conditional RS access token rotation:
+    // Only rotate when provider refresh_token changed (security vs KV quota trade-off)
+    // When provider rotates its refresh_token, we rotate RS token for security.
+    // Otherwise, keep the same RS token to save KV write operations.
+    const providerRefreshRotated = provider.refresh_token !== rec.provider.refresh_token;
+    const newAccess = providerRefreshRotated ? generateOpaqueToken(24) : undefined;
+
     const updated = await store.updateByRsRefresh(
       input.refreshToken,
       provider,
@@ -508,10 +514,11 @@ export async function handleToken(
     logger.info('oauth_token', {
       message: 'Token refreshed successfully',
       providerRefreshed: isExpiringSoon,
+      rsAccessRotated: providerRefreshRotated,
     });
 
     return {
-      access_token: newAccess,
+      access_token: newAccess ?? rec.rs_access_token,
       refresh_token: input.refreshToken,
       token_type: 'bearer',
       expires_in: expiresIn,

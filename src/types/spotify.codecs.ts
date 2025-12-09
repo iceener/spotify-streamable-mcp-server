@@ -156,3 +156,17 @@ export const SpotifyTokenResponseCodec = z.object({
   token_type: z.string().optional(),
 });
 export type SpotifyTokenResponseCodecType = z.infer<typeof SpotifyTokenResponseCodec>;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
