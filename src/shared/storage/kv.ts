@@ -123,13 +123,39 @@ export class KvTokenStore implements TokenStore {
   }
 
   async getByRsAccess(rsAccess: string): Promise<RsRecord | null> {
+    // Check memory cache first (avoids KV read if already fetched this request)
+    const cached = await this.fallback.getByRsAccess(rsAccess);
+    if (cached) return cached;
+
+    // Fetch from KV
     const rec = await this.getJson<RsRecord>(`rs:access:${rsAccess}`);
-    return rec ?? (await this.fallback.getByRsAccess(rsAccess));
+    if (rec) {
+      // Write-through to memory cache for subsequent reads in same request
+      await this.fallback.storeRsMapping(
+        rec.rs_access_token,
+        rec.provider,
+        rec.rs_refresh_token,
+      );
+    }
+    return rec;
   }
 
   async getByRsRefresh(rsRefresh: string): Promise<RsRecord | null> {
+    // Check memory cache first
+    const cached = await this.fallback.getByRsRefresh(rsRefresh);
+    if (cached) return cached;
+
+    // Fetch from KV
     const rec = await this.getJson<RsRecord>(`rs:refresh:${rsRefresh}`);
-    return rec ?? (await this.fallback.getByRsRefresh(rsRefresh));
+    if (rec) {
+      // Write-through to memory cache
+      await this.fallback.storeRsMapping(
+        rec.rs_access_token,
+        rec.provider,
+        rec.rs_refresh_token,
+      );
+    }
+    return rec;
   }
 
   async updateByRsRefresh(
@@ -202,8 +228,17 @@ export class KvTokenStore implements TokenStore {
   }
 
   async getTransaction(txnId: string): Promise<Transaction | null> {
+    // Check memory cache first
+    const cached = await this.fallback.getTransaction(txnId);
+    if (cached) return cached;
+
+    // Fetch from KV
     const txn = await this.getJson<Transaction>(`txn:${txnId}`);
-    return txn ?? (await this.fallback.getTransaction(txnId));
+    if (txn) {
+      // Write-through to memory cache
+      await this.fallback.saveTransaction(txnId, txn);
+    }
+    return txn;
   }
 
   async deleteTransaction(txnId: string): Promise<void> {
@@ -229,8 +264,17 @@ export class KvTokenStore implements TokenStore {
   }
 
   async getTxnIdByCode(code: string): Promise<string | null> {
+    // Check memory cache first
+    const cached = await this.fallback.getTxnIdByCode(code);
+    if (cached) return cached;
+
+    // Fetch from KV
     const obj = await this.getJson<{ v: string }>(`code:${code}`);
-    return obj?.v ?? (await this.fallback.getTxnIdByCode(code));
+    if (obj?.v) {
+      // Write-through to memory cache
+      await this.fallback.saveCode(code, obj.v);
+    }
+    return obj?.v ?? null;
   }
 
   async deleteCode(code: string): Promise<void> {
@@ -272,12 +316,21 @@ export class KvSessionStore implements SessionStore {
   }
 
   private async getSession(key: string): Promise<SessionRecord | null> {
+    // Check memory cache first
+    const cached = await this.fallback.get(key);
+    if (cached) return cached;
+
+    // Fetch from KV
     const raw = await this.kv.get(`${SESSION_KEY_PREFIX}${key}`);
-    if (!raw) {
-      return this.fallback.get(key);
-    }
+    if (!raw) return null;
+
     const plain = await this.decrypt(raw);
-    return fromJson<SessionRecord>(plain);
+    const session = fromJson<SessionRecord>(plain);
+    if (session) {
+      // Write-through to memory cache
+      await this.fallback.put(key, session);
+    }
+    return session;
   }
 
   async ensure(sessionId: string): Promise<void> {

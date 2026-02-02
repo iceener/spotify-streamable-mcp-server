@@ -27,3 +27,25 @@ export function registerPrompts(_server: McpServer): void {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

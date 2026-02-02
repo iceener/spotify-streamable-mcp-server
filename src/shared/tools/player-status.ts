@@ -224,6 +224,11 @@ export const playerStatusTool = defineTool({
       const lastTrackNote = output.current_track?.name
         ? ` Last track was '${output.current_track.name}'.`
         : '';
+      
+      // Track what was actually requested vs what returned data
+      const playerWasRequested = wantedData.has('player') || wantedData.has('current_track');
+      const playerReturnedData = output.player !== undefined;
+      
       const derivedIsPlaying =
         typeof output.player?.is_playing === 'boolean'
           ? output.player?.is_playing
@@ -268,6 +273,17 @@ export const playerStatusTool = defineTool({
           return `No active playback.${lastTrackNote} To check devices, call player_status including "devices".`;
         }
 
+        // Player was requested but returned no data - Spotify isn't active anywhere
+        if (playerWasRequested && !playerReturnedData) {
+          if (devicesRequested) {
+            return noDevices
+              ? `Nothing playing right now, or Spotify isn't active. No devices found. Ask the user to open Spotify on a device first.`
+              : `Nothing playing right now, or Spotify isn't active.${lastTrackNote} Pick a device and use transfer/play to start playback.${deviceListMsg}`;
+          }
+          return `Nothing playing right now, or Spotify isn't active.${lastTrackNote} Include 'devices' to see available targets, or ask the user to open Spotify.`;
+        }
+
+        // Player wasn't requested - suggest including it
         const contextBit = output.player?.context_uri
           ? ` Context: ${output.player.context_uri}.`
           : '';

@@ -25,9 +25,13 @@ export default {
     // Parse config
     const config = parseConfig(env as Record<string, unknown>);
 
-    // Initialize storage
-    const storage = initializeWorkerStorage(env, config);
-    if (!storage) {
+    // Check if this is a discovery route (no storage needed)
+    const url = new URL(request.url);
+    const isDiscoveryRoute = url.pathname.startsWith('/.well-known/');
+
+    // Initialize storage only for routes that need it
+    const storage = isDiscoveryRoute ? null : initializeWorkerStorage(env, config);
+    if (!storage && !isDiscoveryRoute) {
       return withCors(
         new Response('Server misconfigured: Storage unavailable', { status: 503 }),
       );
@@ -35,8 +39,8 @@ export default {
 
     // Create and invoke router
     const router = createWorkerRouter({
-      tokenStore: storage.tokenStore,
-      sessionStore: storage.sessionStore,
+      tokenStore: storage?.tokenStore ?? null,
+      sessionStore: storage?.sessionStore ?? null,
       config,
     });
 

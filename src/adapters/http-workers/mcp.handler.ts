@@ -155,7 +155,7 @@ async function resolveAuthContext(
         if (accessToken) {
           providerToken = accessToken;
 
-          // Re-fetch record if it was refreshed to get updated info
+          // Fetch record (uses memory cache if already fetched by ensureFreshToken)
           const record = await tokenStore.getByRsAccess(rsToken);
           if (record?.provider) {
             provider = {

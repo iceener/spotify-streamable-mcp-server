@@ -141,17 +141,52 @@ export const spotifyControlTool = defineTool({
         ]);
 
         if (successfulPlayIndices.length > 0) {
-          await new Promise((resolve) => setTimeout(resolve, 2500));
+          // Poll for track switch with retries instead of fixed delay
+          const expectedTrackUri = (() => {
+            const lastPlayOp =
+              typeof lastSuccessfulPlayIndex === 'number'
+                ? args.operations[lastSuccessfulPlayIndex]
+                : undefined;
+            if (!lastPlayOp) return undefined;
+            if (Array.isArray(lastPlayOp.uris) && lastPlayOp.uris.length > 0) {
+              return lastPlayOp.uris[0];
+            }
+            if (lastPlayOp.offset?.uri) {
+              return lastPlayOp.offset.uri;
+            }
+            return undefined;
+          })();
 
-          try {
-            const [updatedPlayer, updatedCurrent] = await Promise.all([
-              getPlayerState(client),
-              getCurrentlyPlaying(client).catch(() => null),
-            ]);
-            player = updatedPlayer;
-            current = updatedCurrent;
-          } catch {
-            // Ignore re-query errors
+          const maxAttempts = 4;
+          const delayMs = 1000;
+
+          for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
+
+            try {
+              const [updatedPlayer, updatedCurrent] = await Promise.all([
+                getPlayerState(client),
+                getCurrentlyPlaying(client).catch(() => null),
+              ]);
+              player = updatedPlayer;
+              current = updatedCurrent;
+
+              // Check if track has switched to expected track
+              if (expectedTrackUri && updatedCurrent && typeof updatedCurrent === 'object') {
+                const item = (updatedCurrent as Record<string, unknown>).item as {
+                  uri?: string;
+                } | undefined;
+                if (item?.uri === expectedTrackUri) {
+                  // Track switched successfully, no need to poll further
+                  break;
+                }
+              } else if (!expectedTrackUri) {
+                // No specific track expected, just wait once
+                break;
+              }
+            } catch {
+              // Ignore re-query errors
+            }
           }
         }
         let deviceName: string | undefined;

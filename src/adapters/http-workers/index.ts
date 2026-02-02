@@ -40,8 +40,8 @@ interface KVNamespace {
 }
 
 export interface RouterContext {
-  tokenStore: TokenStore;
-  sessionStore: SessionStore;
+  tokenStore: TokenStore | null;
+  sessionStore: SessionStore | null;
   config: UnifiedConfig;
 }
 
@@ -136,18 +136,25 @@ export function createWorkerRouter(ctx: RouterContext): {
   // CORS preflight
   router.options('*', () => corsPreflightResponse());
 
-  // Discovery routes (/.well-known/*)
+  // Discovery routes (/.well-known/*) - no storage needed
   attachDiscoveryRoutes(router, config);
 
   // OAuth routes (/authorize, /token, /oauth/callback, etc.)
-  attachOAuthRoutes(router, tokenStore, config);
+  if (tokenStore) {
+    attachOAuthRoutes(router, tokenStore, config);
+  }
 
   // MCP endpoints
   router.get(MCP_ENDPOINT_PATH, () => handleMcpGet());
 
-  router.post(MCP_ENDPOINT_PATH, (request: Request) =>
-    handleMcpRequest(request, { tokenStore, sessionStore, config }),
-  );
+  router.post(MCP_ENDPOINT_PATH, (request: Request) => {
+    if (!tokenStore || !sessionStore) {
+      return withCors(
+        new Response('Server misconfigured: Storage unavailable', { status: 503 }),
+      );
+    }
+    return handleMcpRequest(request, { tokenStore, sessionStore, config });
+  });
 
   // Health check
   router.get('/health', () =>
