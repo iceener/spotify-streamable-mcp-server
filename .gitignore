@@ -53,6 +53,7 @@ out/
 .wrangler/
 .mf/
 .dev.vars
+wrangler.toml
 
 ## Framework-specific (safe to ignore if unused)
 .next/

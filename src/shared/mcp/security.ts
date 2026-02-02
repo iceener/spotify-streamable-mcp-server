@@ -22,22 +22,34 @@ export function validateOrigin(headers: Headers, isDev: boolean): void {
   }
 }
 
-export function validateProtocolVersion(headers: Headers, expected: string): void {
+// Supported protocol versions - accept both current and previous versions
+// to maintain compatibility with clients that may not have updated yet
+const SUPPORTED_PROTOCOL_VERSIONS = [
+  '2025-11-25', // Latest
+  '2025-06-18', // Previous (widely used)
+  '2025-03-26', // Legacy
+  '2024-11-05', // Legacy
+];
+
+export function validateProtocolVersion(headers: Headers, _expected: string): void {
   const header =
     headers.get('Mcp-Protocol-Version') || headers.get('MCP-Protocol-Version');
 
   if (!header) {
-    return;
+    return; // Allow requests without version header for backwards compatibility
   }
 
-  const versions = header
+  const clientVersions = header
     .split(',')
     .map((v) => v.trim())
     .filter(Boolean);
 
-  if (!versions.includes(expected)) {
+  // Accept if client sends any supported version
+  const hasSupported = clientVersions.some(v => SUPPORTED_PROTOCOL_VERSIONS.includes(v));
+  
+  if (!hasSupported) {
     throw new Error(
-      `Unsupported MCP protocol version: ${header}. Expected ${expected}`,
+      `Unsupported MCP protocol version: ${header}. Supported: ${SUPPORTED_PROTOCOL_VERSIONS.join(', ')}`,
     );
   }
 }
