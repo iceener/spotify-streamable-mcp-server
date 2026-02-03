@@ -10,6 +10,10 @@ import {
   validateOrigin,
   validateProtocolVersion,
 } from '../../shared/mcp/security.js';
+import {
+  buildProviderRefreshConfig,
+  ensureFreshToken,
+} from '../../shared/oauth/refresh.js';
 import { getTokenStore } from '../../shared/storage/singleton.js';
 import { sharedLogger as logger } from '../../shared/utils/logger.js';
 
@@ -49,10 +53,26 @@ export function createMcpSecurityMiddleware(config: UnifiedConfig): MiddlewareHa
         if (bearer) {
           try {
             const store = getTokenStore();
+
+            // Proactively refresh token if near expiry
+            const providerConfig = buildProviderRefreshConfig(config);
+            const { accessToken, wasRefreshed } = await ensureFreshToken(
+              bearer,
+              store,
+              providerConfig,
+            );
+
+            if (wasRefreshed) {
+              logger.info('mcp_security', {
+                message: 'Provider token refreshed proactively',
+              });
+            }
+
+            // Re-fetch record to get updated provider info (may have been refreshed)
             const record = await store.getByRsAccess(bearer);
             const provider = record?.provider;
 
-            if (provider) {
+            if (provider && accessToken) {
               // Inject auth context into Hono context for MCP routes to use
               // This will be passed to tool handlers via AsyncLocalStorage
               const authContext = {
@@ -63,8 +83,8 @@ export function createMcpSecurityMiddleware(config: UnifiedConfig): MiddlewareHa
                   | 'custom'
                   | 'none',
                 authHeaders: { authorization: auth },
-                resolvedHeaders: { authorization: `Bearer ${provider.access_token}` },
-                providerToken: provider.access_token,
+                resolvedHeaders: { authorization: `Bearer ${accessToken}` },
+                providerToken: accessToken,
                 provider: {
                   access_token: provider.access_token,
                   refresh_token: provider.refresh_token,

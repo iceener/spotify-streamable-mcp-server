@@ -16,6 +16,31 @@ export interface ProviderRefreshConfig {
   tokenEndpointPath?: string;
 }
 
+/**
+ * Build provider refresh config from unified config.
+ * Returns undefined if required fields are missing.
+ */
+export function buildProviderRefreshConfig(config: {
+  PROVIDER_CLIENT_ID?: string;
+  PROVIDER_CLIENT_SECRET?: string;
+  PROVIDER_ACCOUNTS_URL?: string;
+  OAUTH_TOKEN_URL?: string;
+}): ProviderRefreshConfig | undefined {
+  if (
+    !config.PROVIDER_CLIENT_ID ||
+    !config.PROVIDER_CLIENT_SECRET ||
+    !config.PROVIDER_ACCOUNTS_URL
+  ) {
+    return undefined;
+  }
+  return {
+    clientId: config.PROVIDER_CLIENT_ID,
+    clientSecret: config.PROVIDER_CLIENT_SECRET,
+    accountsUrl: config.PROVIDER_ACCOUNTS_URL,
+    tokenEndpointPath: config.OAUTH_TOKEN_URL,
+  };
+}
+
 /** Token refresh result */
 export interface RefreshResult {
   success: boolean;

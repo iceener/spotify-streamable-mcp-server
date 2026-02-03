@@ -4,11 +4,38 @@
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { contextRegistry } from '../core/context.js';
+import type { ZodObject, ZodRawShape, ZodTypeAny } from 'zod';
+import { contextRegistry, getCurrentAuthContext } from '../core/context.js';
 import { sharedTools, type ToolContext } from '../shared/tools/registry.js';
 import type { RequestContext } from '../types/context.js';
 import { createCancellationToken } from '../utils/cancellation.js';
 import { logger } from '../utils/logger.js';
+
+/**
+ * Extract the shape from a Zod schema, handling ZodEffects (refined schemas).
+ * ZodEffects wraps the inner schema when using .refine(), .transform(), etc.
+ */
+function getSchemaShape(schema: ZodTypeAny): ZodRawShape | undefined {
+  // If it's a ZodObject, return its shape directly
+  if ('shape' in schema && typeof schema.shape === 'object') {
+    return (schema as ZodObject<ZodRawShape>).shape;
+  }
+
+  // If it's a ZodEffects (from .refine(), .transform(), etc.), unwrap to get inner schema
+  if ('_def' in schema && schema._def && typeof schema._def === 'object') {
+    const def = schema._def as { schema?: ZodTypeAny; innerType?: ZodTypeAny };
+    // ZodEffects stores the inner schema in _def.schema
+    if (def.schema) {
+      return getSchemaShape(def.schema);
+    }
+    // Some Zod versions use _def.innerType
+    if (def.innerType) {
+      return getSchemaShape(def.innerType);
+    }
+  }
+
+  return undefined;
+}
 
 /**
  * Register all tools with the MCP server.
@@ -20,14 +47,24 @@ export function registerTools(server: McpServer): void {
   // Register shared tools (work in both Node and Workers)
   for (const tool of sharedTools) {
     try {
+      // Extract shape from schema, handling ZodEffects (refined schemas)
+      const inputSchemaShape = getSchemaShape(tool.inputSchema);
+      if (!inputSchemaShape) {
+        logger.error('tools', {
+          message: 'Failed to extract schema shape',
+          toolName: tool.name,
+        });
+        throw new Error(`Failed to extract schema shape for tool: ${tool.name}`);
+      }
+
       const wrappedHandler = createWrappedHandler(server, tool.handler);
 
-      // Shared tools use Zod schemas - pass .shape for SDK compatibility
+      // Shared tools use Zod schemas - pass extracted shape for SDK compatibility
       server.registerTool(
         tool.name,
         {
           description: tool.description,
-          inputSchema: tool.inputSchema.shape,
+          inputSchema: inputSchemaShape,
           ...(tool.outputSchema && { outputSchema: tool.outputSchema }),
           ...(tool.annotations && { annotations: tool.annotations }),
         },
@@ -72,7 +109,13 @@ function createWrappedHandler(
     const requestId = extra?.requestId;
 
     // Look up auth context from registry (stored by MCP routes with auth info)
-    const existingContext = requestId ? contextRegistry.get(requestId) : undefined;
+    let existingContext = requestId ? contextRegistry.get(requestId) : undefined;
+
+    // Fallback to AsyncLocalStorage if requestId not available
+    // This is the primary method since MCP SDK doesn't pass requestId to tool handlers
+    if (!existingContext) {
+      existingContext = getCurrentAuthContext();
+    }
 
     // Build shared ToolContext
     const context: ToolContext = {

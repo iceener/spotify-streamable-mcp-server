@@ -7,7 +7,9 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { toFetchResponse, toReqRes } from 'fetch-to-node';
 import { Hono } from 'hono';
-import { contextRegistry } from '../../core/context.js';
+import { authContextStorage, contextRegistry } from '../../core/context.js';
+import type { RequestContext } from '../../types/context.js';
+import { createCancellationToken } from '../../utils/cancellation.js';
 import { logger } from '../../utils/logger.js';
 
 export function buildMcpRoutes(params: {
@@ -87,27 +89,47 @@ export function buildMcpRoutes(params: {
         });
       };
 
-      // Create request context if body has an ID
-      if (body && typeof body === 'object' && 'id' in body && body.id) {
-        const authContext = (
-          c as unknown as {
-            authContext?: {
-              strategy: 'oauth' | 'bearer' | 'api_key' | 'custom' | 'none';
-              authHeaders: Record<string, string>;
-              resolvedHeaders: Record<string, string>;
-              providerToken?: string;
-              provider?: {
-                access_token: string;
-                refresh_token?: string;
-                expires_at?: number;
-                scopes?: string[];
-              };
-              rsToken?: string;
+      // Extract auth context from Hono context (set by security middleware)
+      const authContext = (
+        c as unknown as {
+          authContext?: {
+            strategy: 'oauth' | 'bearer' | 'api_key' | 'custom' | 'none';
+            authHeaders: Record<string, string>;
+            resolvedHeaders: Record<string, string>;
+            providerToken?: string;
+            provider?: {
+              access_token: string;
+              refresh_token?: string;
+              expires_at?: number;
+              scopes?: string[];
             };
-          }
-        ).authContext;
+            rsToken?: string;
+          };
+        }
+      ).authContext;
 
-        contextRegistry.create(body.id as string | number, plannedSid, {
+      const requestId =
+        body && typeof body === 'object' && 'id' in body
+          ? (body.id as string | number)
+          : undefined;
+
+      // Create request context (used by both registry and AsyncLocalStorage)
+      const requestContext: RequestContext = {
+        sessionId: plannedSid || sessionIdHeader,
+        cancellationToken: createCancellationToken(),
+        requestId,
+        timestamp: Date.now(),
+        authStrategy: authContext?.strategy,
+        authHeaders: authContext?.authHeaders,
+        resolvedHeaders: authContext?.resolvedHeaders,
+        providerToken: authContext?.providerToken,
+        provider: authContext?.provider,
+        rsToken: authContext?.rsToken,
+      };
+
+      // Store in registry for legacy lookup by requestId
+      if (requestId) {
+        contextRegistry.create(requestId, plannedSid, {
           authStrategy: authContext?.strategy,
           authHeaders: authContext?.authHeaders,
           resolvedHeaders: authContext?.resolvedHeaders,
@@ -119,8 +141,11 @@ export function buildMcpRoutes(params: {
 
       await ensureConnected(transport);
 
-      // SDK passes requestId to tool handlers, which look up auth context from registry
-      await transport.handleRequest(req, res, body);
+      // Run transport handling within AsyncLocalStorage context
+      // This makes auth context available to tool handlers via getCurrentAuthContext()
+      await authContextStorage.run(requestContext, async () => {
+        await transport.handleRequest(req, res, body);
+      });
 
       res.on('close', () => {
         void logger.debug('mcp', { message: 'Request closed' });
