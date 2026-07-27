@@ -26,9 +26,7 @@ export function attachDiscoveryRoutes(router: IttyRouter, config: UnifiedConfig)
   });
 
   router.get('/.well-known/oauth-protected-resource', async (request: Request) => {
-    const here = new URL(request.url);
-    const sid = here.searchParams.get('sid') ?? undefined;
-    const metadata = protectedResourceMetadata(here, sid);
+    const metadata = protectedResourceMetadata(new URL(request.url));
     return jsonResponse(metadata);
   });
 }

@@ -45,8 +45,10 @@ export function validateProtocolVersion(headers: Headers, _expected: string): vo
     .filter(Boolean);
 
   // Accept if client sends any supported version
-  const hasSupported = clientVersions.some(v => SUPPORTED_PROTOCOL_VERSIONS.includes(v));
-  
+  const hasSupported = clientVersions.some((v) =>
+    SUPPORTED_PROTOCOL_VERSIONS.includes(v),
+  );
+
   if (!hasSupported) {
     throw new Error(
       `Unsupported MCP protocol version: ${header}. Supported: ${SUPPORTED_PROTOCOL_VERSIONS.join(', ')}`,
@@ -98,12 +100,23 @@ export function buildUnauthorizedChallenge(args: {
   message?: string;
 }): UnauthorizedChallenge {
   const resourcePath = args.resourcePath || '/.well-known/oauth-protected-resource';
-  const resourceMd = `${args.origin}${resourcePath}?sid=${encodeURIComponent(args.sid)}`;
+  const origin = new URL(args.origin);
+  const resourceMetadataUrl = new URL(resourcePath, origin);
+  if (
+    origin.origin !== args.origin ||
+    resourceMetadataUrl.origin !== origin.origin ||
+    resourceMetadataUrl.username ||
+    resourceMetadataUrl.password ||
+    resourceMetadataUrl.search ||
+    resourceMetadataUrl.hash
+  ) {
+    throw new Error('Invalid protected resource metadata URL');
+  }
 
   return {
     status: 401,
     headers: {
-      'WWW-Authenticate': `Bearer realm="MCP", authorization_uri="${resourceMd}"`,
+      'WWW-Authenticate': `Bearer realm="MCP", resource_metadata="${resourceMetadataUrl.href}"`,
       'Mcp-Session-Id': args.sid,
     },
     body: {

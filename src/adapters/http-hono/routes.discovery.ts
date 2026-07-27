@@ -20,16 +20,12 @@ export function buildDiscoveryRoutes(
 
   if (config.AUTH_ENABLED) {
     app.get('/.well-known/oauth-protected-resource', (c) => {
-      const here = new URL(c.req.url);
-      const sid = here.searchParams.get('sid') ?? undefined;
-      const metadata = protectedResourceMetadata(here, sid);
+      const metadata = protectedResourceMetadata(new URL(c.req.url));
       return c.json(metadata);
     });
 
     app.get('/mcp/.well-known/oauth-protected-resource', (c) => {
-      const here = new URL(c.req.url);
-      const sid = here.searchParams.get('sid') ?? undefined;
-      const metadata = protectedResourceMetadata(here, sid);
+      const metadata = protectedResourceMetadata(new URL(c.req.url));
       return c.json(metadata);
     });
   }
