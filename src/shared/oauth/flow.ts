@@ -60,18 +60,39 @@ export function generateOpaqueToken(bytes = 32): string {
   return b64url(array);
 }
 
+// biome-ignore lint/correctness/noUnusedFunctionParameters: preserve the existing OAuth flow signature while loopback handling is environment-independent.
 function isAllowedRedirect(uri: string, config: OAuthConfig, isDev: boolean): boolean {
   try {
     const allowed = new Set(
       config.redirectAllowlist.concat([config.redirectUri]).filter(Boolean),
     );
     const url = new URL(uri);
-
-    if (isDev) {
-      const loopback = new Set(['localhost', '127.0.0.1', '::1']);
-      if (loopback.has(url.hostname)) {
-        return true;
+    const isExactConfiguredRedirect = [...allowed].some((candidate) => {
+      try {
+        return new URL(candidate).href === url.href;
+      } catch {
+        return false;
       }
+    });
+    const isConfiguredRedirectVariant = [...allowed].some((candidate) => {
+      try {
+        const configured = new URL(candidate);
+        const normalized = (pathname: string) => pathname.replace(/\/+$/, '');
+        return (
+          configured.origin === url.origin &&
+          normalized(configured.pathname) === normalized(url.pathname)
+        );
+      } catch {
+        return false;
+      }
+    });
+    if (!isExactConfiguredRedirect && isConfiguredRedirectVariant) {
+      return false;
+    }
+
+    const loopback = new Set(['localhost', '127.0.0.1', '::1']);
+    if (loopback.has(url.hostname)) {
+      return true;
     }
 
     if (config.redirectAllowAll) {
@@ -88,6 +109,20 @@ function isAllowedRedirect(uri: string, config: OAuthConfig, isDev: boolean): bo
   } catch {
     return false;
   }
+}
+
+function isExplicitlyConfiguredRedirect(uri: string, config: OAuthConfig): boolean {
+  if (config.redirectAllowAll) return true;
+  return config.redirectAllowlist
+    .concat([config.redirectUri])
+    .filter(Boolean)
+    .some((candidate) => {
+      try {
+        return new URL(candidate).href === new URL(uri).href;
+      } catch {
+        return false;
+      }
+    });
 }
 
 /**
@@ -211,7 +246,10 @@ export async function handleProviderCallback(
     });
     throw new Error('unknown_txn');
   }
-  if (!isAllowedRedirect(txn.redirectUri, oauthConfig, options.isDev)) {
+  if (
+    !isAllowedRedirect(txn.redirectUri, oauthConfig, options.isDev) ||
+    (!options.isDev && !isExplicitlyConfiguredRedirect(txn.redirectUri, oauthConfig))
+  ) {
     throw new Error('invalid_redirect_uri');
   }
 

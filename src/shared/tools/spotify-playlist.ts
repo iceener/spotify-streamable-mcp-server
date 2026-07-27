@@ -98,7 +98,7 @@ export const spotifyPlaylistTool = defineTool({
   title: toolsMetadata.spotify_playlist.title,
   description: toolsMetadata.spotify_playlist.description,
   inputSchema: SpotifyPlaylistInputSchema,
-  outputSchema: SpotifyPlaylistOutputObject.shape,
+  outputSchema: SpotifyPlaylistOutputObject,
   annotations: {
     title: toolsMetadata.spotify_playlist.title,
     readOnlyHint: false,
@@ -556,39 +556,3 @@ export const spotifyPlaylistTool = defineTool({
     }
   },
 });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

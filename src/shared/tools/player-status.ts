@@ -3,7 +3,6 @@
  */
 
 import type { z } from 'zod';
-import { config } from '../../config/env.js';
 import { toolsMetadata } from '../../config/metadata.js';
 import { SpotifyStatusInputSchema } from '../../schemas/inputs.js';
 import { SpotifyStatusOutput } from '../../schemas/outputs.js';
@@ -32,7 +31,7 @@ export const playerStatusTool = defineTool({
   title: toolsMetadata.player_status.title,
   description: toolsMetadata.player_status.description,
   inputSchema: SpotifyStatusInputSchema,
-  outputSchema: SpotifyStatusOutput.shape,
+  outputSchema: SpotifyStatusOutput,
   annotations: {
     title: toolsMetadata.player_status.title,
     readOnlyHint: true,
@@ -45,7 +44,7 @@ export const playerStatusTool = defineTool({
       if (!client) {
         logger.info('player_status', {
           message: 'Missing user token',
-          sessionId: context.sessionId,
+          requestId: context.requestId,
         });
         return errorResult('Missing user token. Please authenticate.', 'unauthorized');
       }
@@ -224,11 +223,12 @@ export const playerStatusTool = defineTool({
       const lastTrackNote = output.current_track?.name
         ? ` Last track was '${output.current_track.name}'.`
         : '';
-      
+
       // Track what was actually requested vs what returned data
-      const playerWasRequested = wantedData.has('player') || wantedData.has('current_track');
+      const playerWasRequested =
+        wantedData.has('player') || wantedData.has('current_track');
       const playerReturnedData = output.player !== undefined;
-      
+
       const derivedIsPlaying =
         typeof output.player?.is_playing === 'boolean'
           ? output.player?.is_playing
@@ -301,7 +301,7 @@ export const playerStatusTool = defineTool({
         { type: 'text', text: statusMessage },
       ];
 
-      if (config.SPOTIFY_INCLUDE_JSON_IN_CONTENT) {
+      if (context.spotify.includeJsonInContent) {
         contentParts.push({ type: 'text', text: JSON.stringify(structured) });
       }
 

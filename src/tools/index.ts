@@ -1,193 +1,78 @@
-/**
- * Tool registration for Spotify MCP (Node.js runtime).
- * Combines shared tools (cross-runtime) with any Node-specific tools.
- */
+import type {
+  CallToolResult,
+  McpServer,
+  ProtocolEra,
+  ToolCallback,
+} from '@modelcontextprotocol/server';
+import { SPOTIFY_ACCESS_TOKEN_EXTRA_KEY } from '../shared/auth/opaque-token-verifier.js';
+import type { UnifiedConfig } from '../shared/config/env.js';
+import { sharedTools } from '../shared/tools/registry.js';
+import type { ToolContext } from '../shared/tools/types.js';
+import { sharedLogger as logger } from '../shared/utils/logger.js';
 
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { ZodObject, ZodRawShape, ZodTypeAny } from 'zod';
-import { contextRegistry, getCurrentAuthContext } from '../core/context.js';
-import { sharedTools, type ToolContext } from '../shared/tools/registry.js';
-import type { RequestContext } from '../types/context.js';
-import { createCancellationToken } from '../utils/cancellation.js';
-import { logger } from '../utils/logger.js';
+export interface ToolRegistrationOptions {
+  runtimeName: string;
+  era: ProtocolEra;
+  spotifyFetch?: typeof globalThis.fetch;
+}
 
-/**
- * Extract the shape from a Zod schema, handling ZodEffects (refined schemas).
- * ZodEffects wraps the inner schema when using .refine(), .transform(), etc.
- */
-function getSchemaShape(schema: ZodTypeAny): ZodRawShape | undefined {
-  // If it's a ZodObject, return its shape directly
-  if ('shape' in schema && typeof schema.shape === 'object') {
-    return (schema as ZodObject<ZodRawShape>).shape;
-  }
+function resolvedSpotifyAccessToken(
+  config: UnifiedConfig,
+  authInfo: { extra?: Record<string, unknown> } | undefined,
+): string | undefined {
+  const resolved = authInfo?.extra?.[SPOTIFY_ACCESS_TOKEN_EXTRA_KEY];
+  if (typeof resolved === 'string' && resolved.length > 0) return resolved;
 
-  // If it's a ZodEffects (from .refine(), .transform(), etc.), unwrap to get inner schema
-  if ('_def' in schema && schema._def && typeof schema._def === 'object') {
-    const def = schema._def as { schema?: ZodTypeAny; innerType?: ZodTypeAny };
-    // ZodEffects stores the inner schema in _def.schema
-    if (def.schema) {
-      return getSchemaShape(def.schema);
-    }
-    // Some Zod versions use _def.innerType
-    if (def.innerType) {
-      return getSchemaShape(def.innerType);
-    }
-  }
-
+  // Static deployment credentials remain distinct from an inbound MCP bearer.
+  if (config.AUTH_STRATEGY === 'bearer') return config.BEARER_TOKEN;
+  if (config.AUTH_STRATEGY === 'api_key') return config.API_KEY;
   return undefined;
 }
 
-/**
- * Register all tools with the MCP server.
- * Combines shared tools (cross-runtime) with Node-specific tools.
- */
-export function registerTools(server: McpServer): void {
-  const registeredNames: string[] = [];
-
-  // Register shared tools (work in both Node and Workers)
+/** Register the six stable Spotify tool contracts through public v2 APIs. */
+export function registerTools(
+  server: McpServer,
+  config: UnifiedConfig,
+  options: ToolRegistrationOptions,
+): void {
   for (const tool of sharedTools) {
-    try {
-      // Extract shape from schema, handling ZodEffects (refined schemas)
-      const inputSchemaShape = getSchemaShape(tool.inputSchema);
-      if (!inputSchemaShape) {
-        logger.error('tools', {
-          message: 'Failed to extract schema shape',
-          toolName: tool.name,
-        });
-        throw new Error(`Failed to extract schema shape for tool: ${tool.name}`);
-      }
-
-      const wrappedHandler = createWrappedHandler(server, tool.handler);
-
-      // Shared tools use Zod schemas - pass extracted shape for SDK compatibility
-      server.registerTool(
-        tool.name,
-        {
-          description: tool.description,
-          inputSchema: inputSchemaShape,
-          ...(tool.outputSchema && { outputSchema: tool.outputSchema }),
-          ...(tool.annotations && { annotations: tool.annotations }),
+    const callback: ToolCallback<typeof tool.inputSchema> = async (args, ctx) => {
+      const toolContext: ToolContext = {
+        requestId: String(ctx.mcpReq.id),
+        runtimeName: options.runtimeName,
+        signal: ctx.mcpReq.signal,
+        authStrategy: config.AUTH_STRATEGY,
+        spotifyAccessToken: resolvedSpotifyAccessToken(config, ctx.http?.authInfo),
+        spotify: {
+          clientId: config.SPOTIFY_CLIENT_ID,
+          clientSecret: config.SPOTIFY_CLIENT_SECRET,
+          apiUrl: config.SPOTIFY_API_URL,
+          accountsUrl: config.SPOTIFY_ACCOUNTS_URL,
+          includeJsonInContent: config.SPOTIFY_INCLUDE_JSON_IN_CONTENT,
+          ...(options.spotifyFetch ? { fetch: options.spotifyFetch } : {}),
         },
-        wrappedHandler as Parameters<typeof server.registerTool>[2],
-      );
+      };
+      return (await tool.handler(
+        args as Record<string, unknown>,
+        toolContext,
+      )) as CallToolResult;
+    };
 
-      registeredNames.push(tool.name);
-      logger.debug('tools', { message: 'Registered shared tool', toolName: tool.name });
-    } catch (error) {
-      logger.error('tools', {
-        message: 'Failed to register shared tool',
-        toolName: tool.name,
-        error: (error as Error).message,
-      });
-      throw error;
-    }
+    server.registerTool(
+      tool.name,
+      {
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+        ...(tool.outputSchema ? { outputSchema: tool.outputSchema } : {}),
+        ...(tool.annotations ? { annotations: tool.annotations } : {}),
+      },
+      callback,
+    );
   }
 
   logger.info('tools', {
-    message: `Registered ${registeredNames.length} tools`,
-    toolNames: registeredNames,
-    sharedCount: sharedTools.length,
+    message: `Registered ${sharedTools.length} Spotify tools`,
+    toolNames: sharedTools.map((tool) => tool.name),
+    protocolEra: options.era,
   });
-}
-
-/**
- * Create a wrapped handler for shared tools.
- * Adapts the shared ToolContext to the SDK's RequestHandlerExtra.
- */
-function createWrappedHandler(
-  _server: McpServer,
-  handler: (args: Record<string, unknown>, context: ToolContext) => Promise<unknown>,
-) {
-  return async (
-    args: Record<string, unknown>,
-    extra?: {
-      requestId?: string | number;
-      _meta?: { progressToken?: string | number };
-      signal?: AbortSignal;
-    },
-  ) => {
-    const requestId = extra?.requestId;
-
-    // Look up auth context from registry (stored by MCP routes with auth info)
-    let existingContext = requestId ? contextRegistry.get(requestId) : undefined;
-
-    // Fallback to AsyncLocalStorage if requestId not available
-    // This is the primary method since MCP SDK doesn't pass requestId to tool handlers
-    if (!existingContext) {
-      existingContext = getCurrentAuthContext();
-    }
-
-    // Build shared ToolContext
-    const context: ToolContext = {
-      sessionId: String(requestId || crypto.randomUUID()),
-      signal: extra?.signal,
-      meta: {
-        progressToken: extra?._meta?.progressToken,
-        requestId: requestId ? String(requestId) : undefined,
-      },
-      // Auth from context registry
-      authStrategy: existingContext?.authStrategy,
-      providerToken: existingContext?.providerToken,
-      provider: existingContext?.provider
-        ? {
-            accessToken: existingContext.provider.access_token,
-            refreshToken: existingContext.provider.refresh_token,
-            expiresAt: existingContext.provider.expires_at,
-            scopes: existingContext.provider.scopes,
-          }
-        : undefined,
-      resolvedHeaders: existingContext?.resolvedHeaders,
-      authHeaders: existingContext?.authHeaders as Record<string, string> | undefined,
-    };
-
-    try {
-      const result = await handler(args, context);
-      return result;
-    } finally {
-      if (requestId) {
-        contextRegistry.delete(requestId);
-      }
-    }
-  };
-}
-
-/**
- * Create a wrapped handler for legacy Node-specific tools.
- * @deprecated Kept for potential future use with Node-specific tools
- */
-function _createLegacyWrappedHandler(
-  server: McpServer,
-  handler: (args: unknown, context?: RequestContext) => Promise<unknown>,
-) {
-  return async (
-    args: unknown,
-    extra?: { requestId?: string | number; signal?: AbortSignal },
-  ) => {
-    const requestId = extra?.requestId;
-
-    let context: RequestContext & { _server?: McpServer };
-    if (requestId) {
-      const existingContext = contextRegistry.get(requestId);
-      if (existingContext) {
-        context = { ...existingContext, _server: server };
-      } else {
-        context = { ...contextRegistry.create(requestId), _server: server };
-      }
-    } else {
-      context = {
-        cancellationToken: createCancellationToken(),
-        timestamp: Date.now(),
-        _server: server,
-      };
-    }
-
-    try {
-      const result = await handler(args, context);
-      return result;
-    } finally {
-      if (requestId) {
-        contextRegistry.delete(requestId);
-      }
-    }
-  };
 }

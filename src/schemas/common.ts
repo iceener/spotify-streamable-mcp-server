@@ -166,10 +166,7 @@ export const OutputFormatSchema = z.object({
  * Helper to create a strict schema that rejects unknown keys.
  */
 export function strictSchema<T extends z.ZodRawShape>(shape: T): z.ZodObject<T> {
-  return z.object(shape).strict({
-    message:
-      'Unknown parameters detected. Please check the tool schema for allowed parameters.',
-  });
+  return z.object(shape).strict();
 }
 
 /**

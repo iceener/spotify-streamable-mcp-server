@@ -3,6 +3,7 @@
  */
 
 import { z } from 'zod';
+import type { SpotifyToolConfiguration } from '../../shared/tools/types.js';
 import {
   MinimalEntityCodec,
   SearchResponseCodec,
@@ -26,8 +27,12 @@ export type SearchParams = {
   include_external?: 'audio';
 };
 
-export async function searchCatalog(params: SearchParams, _signal?: AbortSignal) {
-  const client = getSpotifyAppClient();
+export async function searchCatalog(
+  params: SearchParams,
+  _signal: AbortSignal | undefined,
+  config: SpotifyToolConfiguration,
+) {
+  const client = getSpotifyAppClient(config);
   const searchParams = new URLSearchParams();
   searchParams.set('q', params.q);
   searchParams.set('type', params.types.join(','));
@@ -135,39 +140,3 @@ export async function searchCatalog(params: SearchParams, _signal?: AbortSignal)
     throw new Error(`Search failed: ${message} [${code}]`);
   }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

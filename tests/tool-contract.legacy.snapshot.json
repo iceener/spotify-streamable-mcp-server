@@ -1,0 +1,943 @@
+[
+  {
+    "name": "health",
+    "description": "Check server health, uptime, and runtime information",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "verbose": {
+          "description": "Include additional runtime details",
+          "type": "boolean"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "description": "Server status"
+        },
+        "timestamp": {
+          "type": "number",
+          "description": "Current timestamp"
+        },
+        "runtime": {
+          "type": "string",
+          "description": "Runtime environment"
+        },
+        "uptime": {
+          "description": "Uptime in seconds (if available)",
+          "type": "number"
+        }
+      },
+      "required": ["status", "timestamp", "runtime"],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Server Health Check",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "player_status",
+    "description": "Read the current player state, devices, queue, and current track. Optional include[] selects any of: player, devices, queue, current_track. Use this to learn device_id before control.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "include": {
+          "default": ["player", "devices", "current_track"],
+          "description": "Which sections to fetch: 'player', 'devices', 'queue', 'current_track'.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["player", "devices", "queue", "current_track"]
+          }
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "_msg": {
+          "type": "string"
+        },
+        "player": {
+          "type": "object",
+          "properties": {
+            "is_playing": {
+              "type": "boolean"
+            },
+            "shuffle_state": {
+              "type": "boolean"
+            },
+            "repeat_state": {
+              "type": "string",
+              "enum": ["off", "track", "context"]
+            },
+            "progress_ms": {
+              "type": "number"
+            },
+            "timestamp": {
+              "type": "number"
+            },
+            "device_id": {
+              "type": "string"
+            },
+            "context_uri": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": ["is_playing"],
+          "additionalProperties": false
+        },
+        "current_track": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "track"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "uri": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "artists": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "album": {
+                  "type": "string"
+                },
+                "duration_ms": {
+                  "type": "number"
+                },
+                "url": {
+                  "type": "string",
+                  "format": "uri"
+                }
+              },
+              "required": ["type", "id", "name", "artists"],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "devices": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "is_active": {
+                "type": "boolean"
+              },
+              "volume_percent": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": ["id", "name", "type", "is_active"],
+            "additionalProperties": false
+          }
+        },
+        "devicesById": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "is_active": {
+                "type": "boolean"
+              },
+              "volume_percent": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": ["id", "name", "type", "is_active"],
+            "additionalProperties": false
+          }
+        },
+        "queue": {
+          "type": "object",
+          "properties": {
+            "current_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "next_ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "byId": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "track"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "uri": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "artists": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "album": {
+                    "type": "string"
+                  },
+                  "duration_ms": {
+                    "type": "number"
+                  },
+                  "url": {
+                    "type": "string",
+                    "format": "uri"
+                  }
+                },
+                "required": ["type", "id", "name", "artists"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": ["next_ids"],
+          "additionalProperties": false
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Player Status",
+      "readOnlyHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "search_catalog",
+    "description": "Search songs, artists, albums, and playlists. Inputs: queries[], types[album|artist|playlist|track], optional market(2 letters), limit(1-50), offset(0-1000), include_external['audio']. Returns ordered items per query.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "queries": {
+          "minItems": 1,
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Search strings. Pass one or more; each runs separately. Supports field filters like 'track:', 'artist:', 'year:'."
+        },
+        "types": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["album", "artist", "playlist", "track"]
+          },
+          "description": "Item categories to search across. Supported: 'album', 'artist', 'playlist', 'track'."
+        },
+        "market": {
+          "description": "2-letter country code (ISO 3166-1). Returns only content available in that market.",
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 2
+        },
+        "limit": {
+          "default": 20,
+          "description": "Max results per item type (1-50).",
+          "type": "number",
+          "minimum": 1,
+          "maximum": 50
+        },
+        "offset": {
+          "default": 0,
+          "description": "Index of first result (0-1000).",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "include_external": {
+          "description": "If set to 'audio', mark externally hosted audio as playable.",
+          "type": "string",
+          "const": "audio"
+        }
+      },
+      "required": ["queries", "types"],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "_msg": {
+          "type": "string"
+        },
+        "queries": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "types": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["album", "artist", "playlist", "track"]
+          }
+        },
+        "limit": {
+          "type": "number"
+        },
+        "offset": {
+          "type": "number"
+        },
+        "batches": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "inputIndex": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "query": {
+                "type": "string"
+              },
+              "totals": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "number"
+                }
+              },
+              "items": {
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "const": "track"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "uri": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "artists": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "album": {
+                          "type": "string"
+                        },
+                        "duration_ms": {
+                          "type": "number"
+                        },
+                        "url": {
+                          "type": "string",
+                          "format": "uri"
+                        }
+                      },
+                      "required": ["type", "id", "name", "artists"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "const": "album"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "uri": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "url": {
+                          "type": "string",
+                          "format": "uri"
+                        }
+                      },
+                      "required": ["type", "id", "name"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "const": "artist"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "uri": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "url": {
+                          "type": "string",
+                          "format": "uri"
+                        }
+                      },
+                      "required": ["type", "id", "name"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "const": "playlist"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "uri": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "owner": {
+                          "type": "string"
+                        },
+                        "url": {
+                          "type": "string",
+                          "format": "uri"
+                        }
+                      },
+                      "required": ["type", "id", "name"],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              }
+            },
+            "required": ["inputIndex", "query", "totals", "items"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["_msg", "queries", "types", "limit", "offset", "batches"],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Find Music (Catalog Search)",
+      "readOnlyHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "spotify_control",
+    "description": "Control Spotify playback: play, pause, next/previous, seek, shuffle, repeat, volume, transfer, and queue. Accepts a batch of operations and returns per-operation results. Optional parallel=true runs operations concurrently.\n\nUsage notes:\n- To play a specific track from a playlist, set 'context_uri' to the playlist URI (e.g., 'spotify:playlist:...') and set 'offset' to either { position: <zero-based index> } or { uri: 'spotify:track:...' }.\n- Do not provide 'uris' together with 'context_uri' in the same play operation.\n- Use the 'player_status' tool first to get a 'device_id' to target.\n- After issuing play/transfer, call 'player_status' to confirm playback and target device.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "operations": {
+          "minItems": 1,
+          "maxItems": 25,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "play",
+                  "pause",
+                  "next",
+                  "previous",
+                  "seek",
+                  "volume",
+                  "shuffle",
+                  "repeat",
+                  "transfer",
+                  "queue"
+                ],
+                "description": "Operation to perform."
+              },
+              "device_id": {
+                "description": "Target device ID — a long alphanumeric hash from player_status → devices[].id or player.device_id. NEVER use device name (like 'MacBook Pro')! Required for 'transfer'; optional for others.",
+                "type": "string"
+              },
+              "position_ms": {
+                "description": "Seek or start playback from this position (milliseconds).",
+                "type": "number",
+                "minimum": 0
+              },
+              "volume_percent": {
+                "description": "Volume level 0-100 for volume action.",
+                "type": "number",
+                "minimum": 0,
+                "maximum": 100
+              },
+              "shuffle": {
+                "description": "Shuffle on/off for shuffle action.",
+                "type": "boolean"
+              },
+              "repeat": {
+                "description": "Repeat mode for repeat action.",
+                "type": "string",
+                "enum": ["off", "track", "context"]
+              },
+              "context_uri": {
+                "description": "Playback context URI (album/artist/playlist). Must NOT be provided together with 'uris'. Use with 'offset' to pick a specific track (album/playlist only).",
+                "type": "string"
+              },
+              "uris": {
+                "description": "Track URIs to play directly. Must NOT be provided together with 'context_uri'.",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "offset": {
+                "description": "Start point within the context: zero-based position or an item URI present in the context (album/playlist). Provide only when using context playback.",
+                "type": "object",
+                "properties": {
+                  "position": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "uri": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "queue_uri": {
+                "description": "Item URI to add to the queue (track or episode).",
+                "type": "string"
+              },
+              "transfer_play": {
+                "description": "When transferring, start playback immediately on the new device.",
+                "type": "boolean"
+              }
+            },
+            "required": ["action"],
+            "additionalProperties": false
+          },
+          "description": "Batch of 1-25 operations."
+        },
+        "parallel": {
+          "description": "If true, run all operations concurrently. Default is sequential execution in given order for safety.",
+          "type": "boolean"
+        }
+      },
+      "required": ["operations"],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "_msg": {
+          "type": "string"
+        },
+        "results": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "index": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "action": {
+                "type": "string"
+              },
+              "ok": {
+                "type": "boolean"
+              },
+              "note": {
+                "type": "string"
+              },
+              "device_id": {
+                "type": "string"
+              },
+              "device_name": {
+                "type": "string"
+              },
+              "from_device_id": {
+                "type": "string"
+              },
+              "from_device_name": {
+                "type": "string"
+              },
+              "error": {
+                "type": "string"
+              },
+              "code": {
+                "type": "string",
+                "enum": ["unauthorized", "forbidden", "rate_limited", "bad_response"]
+              }
+            },
+            "required": ["index", "action", "ok"],
+            "additionalProperties": false
+          }
+        },
+        "summary": {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "failed": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": ["ok", "failed"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["_msg", "results", "summary"],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Control Spotify Playback",
+      "readOnlyHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "spotify_playlist",
+    "description": "Manage playlists for the signed-in user: list your playlists, read one, list its items, create a new one, update details, add or remove items, and reorder items.\n\nNotes:\n- The 'items' action returns playlist tracks annotated with a zero-based 'position' and includes 'playlist_uri' so the model can start playback at an exact track using 'spotify_control' → action 'play' with { context_uri: playlist_uri, offset: { position } }.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "list_user",
+            "get",
+            "items",
+            "create",
+            "update_details",
+            "add_items",
+            "remove_items",
+            "reorder_items"
+          ],
+          "description": "Playlist action: list_user, get, items, create, update_details, add_items, remove_items, reorder_items."
+        },
+        "playlist_id": {
+          "description": "Target playlist ID. Required for get/items/update_details/add_items/remove_items/reorder_items.",
+          "type": "string"
+        },
+        "limit": {
+          "description": "Pagination limit (1-50) for list_user/items.",
+          "default": 20,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50
+        },
+        "offset": {
+          "description": "Pagination offset for list_user/items.",
+          "default": 0,
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000
+        },
+        "market": {
+          "description": "2-letter country code for get/items.",
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 2
+        },
+        "fields": {
+          "description": "Spotify 'fields' filter to select response fields (get/items).",
+          "type": "string"
+        },
+        "additional_types": {
+          "description": "Include 'episode' items when listing playlist items (items).",
+          "type": "string",
+          "enum": ["track", "episode"]
+        },
+        "name": {
+          "description": "Playlist name (create/update_details).",
+          "type": "string"
+        },
+        "description": {
+          "description": "Playlist description (create/update_details).",
+          "type": "string"
+        },
+        "public": {
+          "description": "Whether the playlist is public (create/update_details).",
+          "type": "boolean"
+        },
+        "collaborative": {
+          "description": "Whether the playlist is collaborative (create/update_details).",
+          "type": "boolean"
+        },
+        "uris": {
+          "description": "Track URIs to add (add_items).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "tracks": {
+          "description": "Tracks to remove by URI: [{ uri }] (remove_items).",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "uri": {
+                "type": "string"
+              }
+            },
+            "required": ["uri"],
+            "additionalProperties": false
+          }
+        },
+        "range_start": {
+          "description": "Start index of the range to move (reorder_items).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "insert_before": {
+          "description": "Insert the range before this index (reorder_items).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "range_length": {
+          "description": "Length of the range (default 1) (reorder_items).",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "snapshot_id": {
+          "description": "Optional snapshot for concurrency control (remove_items/reorder_items).",
+          "type": "string"
+        }
+      },
+      "required": ["action"],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "action": {
+          "type": "string"
+        },
+        "_msg": {
+          "type": "string"
+        },
+        "data": {},
+        "error": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        }
+      },
+      "required": ["ok", "action"],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Playlists: Create, Edit, and Browse",
+      "readOnlyHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "spotify_library",
+    "description": "Manage saved songs: list, add, remove, and check if songs are saved for the current user.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["tracks_get", "tracks_add", "tracks_remove", "tracks_contains"],
+          "description": "Saved songs action."
+        },
+        "market": {
+          "description": "2-letter country code (tracks_get only).",
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 2
+        },
+        "limit": {
+          "description": "Pagination limit for tracks_get.",
+          "default": 20,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50
+        },
+        "offset": {
+          "description": "Pagination offset for tracks_get.",
+          "default": 0,
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "ids": {
+          "description": "Spotify track IDs (not URIs). Required for tracks_add/remove/contains.",
+          "maxItems": 50,
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": ["action"],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "action": {
+          "type": "string"
+        },
+        "_msg": {
+          "type": "string"
+        },
+        "data": {},
+        "error": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        }
+      },
+      "required": ["ok", "action"],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false
+    },
+    "annotations": {
+      "title": "Library: Saved Songs",
+      "readOnlyHint": false,
+      "openWorldHint": true
+    }
+  }
+]

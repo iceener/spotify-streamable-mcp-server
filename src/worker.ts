@@ -1,49 +1,33 @@
-/**
- * Cloudflare Workers entry point.
- *
- * This is a thin wrapper that initializes storage and delegates to the router.
- * All logic is in:
- * - adapters/http-workers/index.ts - Router factory and storage init
- * - adapters/http-workers/mcp.handler.ts - MCP endpoint handler
- * - shared/mcp/dispatcher.ts - JSON-RPC dispatch logic
- */
-
-import {
-  createWorkerRouter,
-  initializeWorkerStorage,
-  shimProcessEnv,
-  type WorkerEnv,
-} from './adapters/http-workers/index.js';
+import { preloadSchemas } from '@modelcontextprotocol/server';
+import { initializeWorkerStorage } from './adapters/http-workers/index.js';
+import { buildHttpApp, type HttpRuntime } from './http/app.js';
 import { parseConfig } from './shared/config/env.js';
-import { withCors } from './shared/http/cors.js';
+
+preloadSchemas();
+
+export function createWorkerRuntime(env: Env, request: Request): HttpRuntime {
+  const requestUrl = new URL(request.url);
+  const values: Record<string, unknown> = { ...env };
+  values.MCP_PUBLIC_URL ||= `${requestUrl.origin}/mcp`;
+  values.MCP_ALLOWED_HOSTS ||= requestUrl.hostname;
+  values.MCP_ALLOWED_ORIGIN_HOSTNAMES ||= requestUrl.hostname;
+  values.AUTH_DISCOVERY_URL ||= requestUrl.origin;
+
+  const config = parseConfig(values);
+  const storage = initializeWorkerStorage(env, config);
+  return buildHttpApp(config, {
+    runtimeName: 'cloudflare-workers',
+    tokenStore: storage.tokenStore,
+    authorizationServerUrl: new URL(config.AUTH_DISCOVERY_URL ?? requestUrl.origin),
+    includeOAuthRoutes: true,
+  });
+}
+
+let runtime: HttpRuntime | undefined;
 
 export default {
-  async fetch(request: Request, env: WorkerEnv): Promise<Response> {
-    // Shim process.env for shared modules
-    shimProcessEnv(env);
-
-    // Parse config
-    const config = parseConfig(env as Record<string, unknown>);
-
-    // Check if this is a discovery route (no storage needed)
-    const url = new URL(request.url);
-    const isDiscoveryRoute = url.pathname.startsWith('/.well-known/');
-
-    // Initialize storage only for routes that need it
-    const storage = isDiscoveryRoute ? null : initializeWorkerStorage(env, config);
-    if (!storage && !isDiscoveryRoute) {
-      return withCors(
-        new Response('Server misconfigured: Storage unavailable', { status: 503 }),
-      );
-    }
-
-    // Create and invoke router
-    const router = createWorkerRouter({
-      tokenStore: storage?.tokenStore ?? null,
-      sessionStore: storage?.sessionStore ?? null,
-      config,
-    });
-
-    return router.fetch(request);
+  fetch(request, env) {
+    runtime ??= createWorkerRuntime(env, request);
+    return runtime.fetch(request);
   },
-};
+} satisfies ExportedHandler<Env>;

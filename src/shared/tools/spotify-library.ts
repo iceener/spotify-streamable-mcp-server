@@ -3,7 +3,6 @@
  */
 
 import type { SpotifyApi } from '@spotify/web-api-ts-sdk';
-import { config } from '../../config/env.js';
 import { toolsMetadata } from '../../config/metadata.js';
 import {
   type SpotifyLibraryInput,
@@ -21,7 +20,12 @@ import { toSlimTrack } from '../../utils/mappers.js';
 import { sharedLogger as logger } from '../utils/logger.js';
 import { defineTool, type ToolContext, type ToolResult } from './types.js';
 
-function ok(action: string, data?: unknown, msg?: string): ToolResult {
+function ok(
+  action: string,
+  data?: unknown,
+  msg?: string,
+  includeJson = false,
+): ToolResult {
   const structured: SpotifyLibraryOutputObject = {
     ok: true,
     action,
@@ -31,7 +35,7 @@ function ok(action: string, data?: unknown, msg?: string): ToolResult {
   const contentParts: Array<{ type: 'text'; text: string }> = [
     { type: 'text', text: msg ?? `${action}: ok` },
   ];
-  if (config.SPOTIFY_INCLUDE_JSON_IN_CONTENT) {
+  if (includeJson) {
     contentParts.push({ type: 'text', text: JSON.stringify(structured) });
   }
   return {
@@ -128,7 +132,7 @@ export const spotifyLibraryTool = defineTool({
   title: toolsMetadata.spotify_library.title,
   description: toolsMetadata.spotify_library.description,
   inputSchema: SpotifyLibraryInputSchema,
-  outputSchema: SpotifyLibraryOutputObject.shape,
+  outputSchema: SpotifyLibraryOutputObject,
   annotations: {
     title: toolsMetadata.spotify_library.title,
     readOnlyHint: false,
@@ -188,6 +192,7 @@ export const spotifyLibraryTool = defineTool({
               items: tracks,
             },
             msg,
+            context.spotify.includeJsonInContent,
           );
         }
         case 'tracks_add': {
@@ -220,6 +225,7 @@ export const spotifyLibraryTool = defineTool({
             args.action,
             { saved: args.ids.length, ids: args.ids },
             `Saved ${args.ids.length} ${noun}${list}`,
+            context.spotify.includeJsonInContent,
           );
         }
         case 'tracks_remove': {
@@ -252,6 +258,7 @@ export const spotifyLibraryTool = defineTool({
             args.action,
             { removed: args.ids.length, ids: args.ids },
             `Removed ${args.ids.length} ${noun}${list}`,
+            context.spotify.includeJsonInContent,
           );
         }
         case 'tracks_contains': {
@@ -288,7 +295,12 @@ export const spotifyLibraryTool = defineTool({
             ? ` Saved: ${savedPreview}${savedSlims.length > 5 ? ', …' : ''}`
             : '';
           const msg = `Already saved: ${yes}/${args.ids.length}.${detail}`;
-          return ok(args.action, { ids: args.ids, contains }, msg);
+          return ok(
+            args.action,
+            { ids: args.ids, contains },
+            msg,
+            context.spotify.includeJsonInContent,
+          );
         }
       }
     } catch (error) {
@@ -311,39 +323,3 @@ export const spotifyLibraryTool = defineTool({
     }
   },
 });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -15,6 +15,16 @@ const LOG_LEVELS: Record<LogLevel, number> = {
   error: 3,
 };
 
+const SENSITIVE_KEYS = [
+  'password',
+  'token',
+  'secret',
+  'key',
+  'authorization',
+  'access_token',
+  'refresh_token',
+];
+
 let currentLevel: LogLevel = 'info';
 
 function shouldLog(level: LogLevel): boolean {
@@ -28,30 +38,34 @@ function formatLog(level: LogLevel, logger: string, data: LogData): string {
   return `[${timestamp}] ${level.toUpperCase()} [${logger}] ${message}${extra}`;
 }
 
-function sanitize(data: LogData): LogData {
-  const sanitized = { ...data };
-  const sensitiveKeys = [
-    'password',
-    'token',
-    'secret',
-    'key',
-    'authorization',
-    'access_token',
-    'refresh_token',
-  ];
+function isSensitiveKey(key: string): boolean {
+  const normalized = key.toLowerCase();
+  return SENSITIVE_KEYS.some((sensitive) => normalized.includes(sensitive));
+}
 
-  for (const key of Object.keys(sanitized)) {
-    if (sensitiveKeys.some((sk) => key.toLowerCase().includes(sk))) {
-      const value = sanitized[key];
-      if (typeof value === 'string' && value.length > 8) {
-        sanitized[key] = `${value.substring(0, 8)}...`;
-      } else {
-        sanitized[key] = '[REDACTED]';
-      }
-    }
+function sanitizeValue(value: unknown, key: string, seen: WeakSet<object>): unknown {
+  if (isSensitiveKey(key)) return '[REDACTED]';
+  if (value === null || typeof value !== 'object') return value;
+  if (seen.has(value)) return '[CIRCULAR]';
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    return value.map((entry) => sanitizeValue(entry, key, seen));
+  }
+  if (value instanceof Error) {
+    return { name: value.name, message: value.message };
   }
 
-  return sanitized;
+  return Object.fromEntries(
+    Object.entries(value).map(([entryKey, entryValue]) => [
+      entryKey,
+      sanitizeValue(entryValue, entryKey, seen),
+    ]),
+  );
+}
+
+function sanitize(data: LogData): LogData {
+  return sanitizeValue(data, '', new WeakSet()) as LogData;
 }
 
 export const sharedLogger = {

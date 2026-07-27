@@ -2,7 +2,6 @@
  * Search Catalog Tool - Search Spotify for tracks, albums, artists, and playlists.
  */
 
-import { config } from '../../config/env.js';
 import { toolsMetadata } from '../../config/metadata.js';
 import { SpotifySearchInputSchema } from '../../schemas/inputs.js';
 import { SpotifySearchBatchOutput } from '../../schemas/outputs.js';
@@ -17,7 +16,7 @@ export const searchCatalogTool = defineTool({
   title: toolsMetadata.search_catalog.title,
   description: toolsMetadata.search_catalog.description,
   inputSchema: SpotifySearchInputSchema,
-  outputSchema: SpotifySearchBatchOutput.shape,
+  outputSchema: SpotifySearchBatchOutput,
   annotations: {
     title: toolsMetadata.search_catalog.title,
     readOnlyHint: true,
@@ -46,6 +45,7 @@ export const searchCatalogTool = defineTool({
               include_external: args.include_external,
             },
             context.signal,
+            context.spotify,
           );
           return {
             inputIndex,
@@ -109,7 +109,7 @@ export const searchCatalogTool = defineTool({
       const contentParts: Array<{ type: 'text'; text: string }> = [
         { type: 'text', text: multiQueryMsg },
       ];
-      if (config.SPOTIFY_INCLUDE_JSON_IN_CONTENT) {
+      if (context.spotify.includeJsonInContent) {
         contentParts.push({ type: 'text', text: JSON.stringify(structured) });
       }
 
@@ -149,39 +149,3 @@ export const searchCatalogTool = defineTool({
     }
   },
 });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

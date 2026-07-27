@@ -14,6 +14,7 @@ export interface ProviderRefreshConfig {
   clientSecret: string;
   accountsUrl: string;
   tokenEndpointPath?: string;
+  fetch?: typeof globalThis.fetch;
 }
 
 /**
@@ -85,7 +86,7 @@ export async function refreshProviderToken(
   });
 
   try {
-    const resp = await fetch(tokenUrl, {
+    const resp = await (config.fetch ?? globalThis.fetch)(tokenUrl, {
       method: 'POST',
       headers: {
         'content-type': 'application/x-www-form-urlencoded',
@@ -273,7 +274,8 @@ export async function ensureFreshToken(
 
   // Determine if RS access token should rotate
   // Only rotate when provider refresh_token changed (security trade-off for KV quota)
-  const providerRefreshRotated = result.tokens.refresh_token !== record.provider.refresh_token;
+  const providerRefreshRotated =
+    result.tokens.refresh_token !== record.provider.refresh_token;
   const newRsAccess = providerRefreshRotated ? undefined : record.rs_access_token;
 
   // Update token store with new tokens

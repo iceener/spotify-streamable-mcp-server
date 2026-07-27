@@ -1,15 +1,13 @@
 # Spotify MCP Server
 
-Streamable HTTP MCP server for Spotify — search music, control playback, manage playlists and saved songs.
+Fetch-native MCP server for Spotify — search music, control playback, manage playlists, and manage saved songs. It runs on Bun and Cloudflare Workers.
 
 Author: [overment](https://x.com/_overment)
 
 > [!WARNING]
-> This warning applies only to the HTTP transport and OAuth wrapper included for convenience. They are intended for personal/local use and are not production‑hardened.
+> This repository targets the **candidate** `2026-07-28` protocol with exact `@modelcontextprotocol/server@2.0.0-beta.5` and `@modelcontextprotocol/client@2.0.0-beta.5` pins. Do not describe it as conforming to the final dated release until the final specification and packages are published and verified.
 >
-> The MCP tools and schemas themselves are implemented with strong validation, slim outputs, clear error handling, and other best practices.
->
-> If you plan to deploy remotely, harden the OAuth/HTTP layer: proper token validation, secure storage, TLS termination, strict CORS/origin checks, rate limiting, audit logging, and compliance with Spotify's terms.
+> The MCP boundary validates Host and Origin, uses strict CORS and bounded bodies, and validates opaque Resource Server tokens. Production operators must still configure the public URL/allowlists, TLS-facing deployment, Spotify credentials and redirect URIs, encrypted storage, rate limits, audit policy, and Spotify compliance.
 
 ## Motivation
 
@@ -32,9 +30,10 @@ At first glance, a "Spotify MCP" may seem unnecessary—pressing play or skippin
 - ✅ **Device Transfer** — Move playback between devices
 - ✅ **Playlists** — Create, edit, add/remove tracks, reorder
 - ✅ **Library** — Save/remove tracks, check if saved
-- ✅ **OAuth 2.1** — Secure PKCE flow with RS token mapping
-- ✅ **Dual Runtime** — Node.js/Bun or Cloudflare Workers
-- ✅ **Production Ready** — Encrypted token storage, rate limiting, multi-user support
+- **OAuth 2.1 proxy** — PKCE S256, CIMD/DCR metadata, opaque RS-token mapping, refresh and rotation
+- **Dual runtime** — Bun and Cloudflare Workers
+- **Protected storage** — Existing file/KV record formats and AES-256-GCM encryption remain compatible
+- **MCP v2 candidate** — Modern `2026-07-28` plus SDK-owned stateless `2025-11-25` fallback
 
 ### Design Principles
 
@@ -63,6 +62,11 @@ Edit `.env`:
 ```env
 PORT=3000
 AUTH_ENABLED=true
+MCP_PUBLIC_URL=http://localhost:3000/mcp
+MCP_ALLOWED_HOSTS=localhost,127.0.0.1,[::1]
+MCP_ALLOWED_ORIGIN_HOSTNAMES=localhost,127.0.0.1,[::1]
+MCP_LEGACY_MODE=stateless
+MCP_MAX_REQUEST_BYTES=1048576
 
 # From https://developer.spotify.com/dashboard
 SPOTIFY_CLIENT_ID=your_client_id
@@ -341,19 +345,25 @@ Saved 1 track:
 Successful: volume. Status: Now playing on 'MacBook Pro'. Current track: 'Protected'. Volume: 100%
 ```
 
-## HTTP Endpoints
+## HTTP and credential boundaries
 
-- `POST /mcp` — MCP JSON-RPC 2.0 endpoint
-- `GET /mcp` — SSE stream (Node.js only)
-- `GET /health` — Health check
-- `GET /.well-known/oauth-authorization-server` — OAuth AS metadata
-- `GET /.well-known/oauth-protected-resource` — OAuth RS metadata
+- `POST /mcp` — MCP endpoint. A fresh `McpServer` is registered for each request.
+- `GET /mcp` and `DELETE /mcp` — `405`; this server does not create MCP transport sessions.
+- `GET /health` — Runtime health.
+- `GET /.well-known/oauth-protected-resource/mcp` — RFC 9728 Resource Server metadata. Legacy metadata aliases remain available.
+- `GET /.well-known/oauth-authorization-server` — OAuth Authorization Server metadata.
 
-OAuth (PORT+1):
-- `GET /authorize` — Start OAuth flow
-- `GET /oauth/callback` — Provider callback
-- `POST /token` — Token exchange
-- `POST /revoke` — Revoke tokens
+OAuth proxy routes stay outside MCP dispatch. Workers expose them on the same origin; Bun exposes them on `PORT + 1`:
+
+- `GET /authorize` — Start the Spotify authorization flow.
+- `GET /oauth/callback` — Exchange Spotify's provider code.
+- `POST /token` — Exchange a client code or refresh an RS token.
+- `POST /revoke` — Preserve the existing no-op revocation response.
+- `POST /register` — Dynamic client registration/CIMD-compatible metadata flow.
+
+The bearer presented to `/mcp` is an opaque MCP Resource Server token. A custom verifier looks up its stored alias, proactively refreshes Spotify when needed, and puts only `resolvedSpotifyAccessToken` in `AuthInfo.extra`. Tools never use `AuthInfo.token`, never forward the inbound MCP bearer, and never receive a Spotify refresh token. File/KV refresh records remain the only refresh-token boundary.
+
+`MCP_REQUIRED_SCOPES` is optional and empty by default for rollout compatibility. When configured, missing trusted record scopes return `403 insufficient_scope`.
 
 ## Client Configuration (Claude Desktop)
 
@@ -373,21 +383,24 @@ OAuth (PORT+1):
 
 ### Setup
 
-1. Create KV namespace:
+1. Create a KV namespace:
 ```bash
-wrangler kv:namespace create TOKENS
+wrangler kv namespace create TOKENS
 ```
 
-2. Update `wrangler.toml`:
-```toml
-[[kv_namespaces]]
-binding = "TOKENS"
-id = "your-kv-id"
-
-[vars]
-AUTH_ENABLED = "true"
-OAUTH_SCOPES = "playlist-read-private user-read-playback-state user-modify-playback-state user-library-read user-library-modify"
+2. Copy `wrangler.example.jsonc` to `wrangler.jsonc`, set the KV ID, public deployment settings, and allowlists:
+```jsonc
+{
+  "vars": {
+    "AUTH_ENABLED": "true",
+    "MCP_LEGACY_MODE": "stateless",
+    "OAUTH_SCOPES": "playlist-read-private user-read-playback-state user-modify-playback-state user-library-read user-library-modify"
+  },
+  "kv_namespaces": [{ "binding": "TOKENS", "id": "your-kv-id" }]
+}
 ```
+
+Set `MCP_PUBLIC_URL`, `MCP_ALLOWED_HOSTS`, `MCP_ALLOWED_ORIGIN_HOSTNAMES`, and `AUTH_DISCOVERY_URL` for the production hostname. The Worker has a backward-compatible first-request origin fallback, but explicit values are the recommended production posture.
 
 3. Set secrets:
 ```bash
@@ -401,7 +414,7 @@ wrangler secret put TOKENS_ENC_KEY
 # Paste the generated key when prompted
 ```
 
-> **Note:** `TOKENS_ENC_KEY` encrypts OAuth tokens stored in KV (AES-256-GCM). Without it, tokens are stored in plaintext (not recommended for production).
+> **Note:** The Worker retains the deployed `TOKENS_ENC_KEY` binding and also accepts `RS_TOKENS_ENC_KEY`; Bun uses `RS_TOKENS_ENC_KEY`. Both feed the same AES-256-GCM record codec. Without a key, tokens are stored in plaintext (not recommended for production).
 
 4. Deploy:
 ```bash
@@ -411,12 +424,23 @@ wrangler deploy
 ## Development
 
 ```bash
-bun dev           # Start with hot reload
-bun run typecheck # TypeScript check
-bun run lint      # Lint code
-bun run build     # Production build
-bun start         # Run production
+bun dev                    # Bun MCP + OAuth servers with reload
+bun test                   # OAuth, protocol, provider mock, and storage compatibility tests
+bun run typecheck          # Bun and Worker TypeScript projects
+bun run lint               # Biome checks
+bun run format:check       # Formatting check
+bun run build              # Bun bundle
+bun run types:worker:check # Generated Worker bindings
+bun run build:worker       # Wrangler dry-run/workerd bundle
+bun run test:workerd       # Actual local workerd, modern + legacy clients
+bun start                  # Bun MCP + OAuth servers
 ```
+
+### Candidate validation status
+
+Automated tests use the official beta.5 client for modern and legacy flows, pin complete six-tool wire snapshots, exercise opaque-token `401`/`403` behavior, prove MCP/Spotify token separation and concurrent-principal isolation, mock all five Spotify provider tools, and verify plaintext/encrypted file and KV record compatibility. The Zod 4 projection preserves contract meaning while using draft 2020-12 `anyOf` for nullable fields and explicit JavaScript-safe bounds for integer schemas.
+
+Credential-only validation remains for a real Spotify account and deployment: Spotify Dashboard redirect registration, a live authorize/callback/token/refresh cycle, account/Premium-dependent playback behavior, production KV bindings and secrets, and the final public hostname/TLS/allowlists. Final `2026-07-28` conformance also remains gated on the final specification and stable packages.
 
 ## Architecture
 
@@ -435,15 +459,16 @@ src/
 │   └── spotify/         # Spotify API clients
 │       ├── sdk.ts       # SpotifyApi wrapper
 │       ├── player.ts    # Player API
-│       ├── catalog.ts   # Search API
-│       └── oauth.ts     # Token refresh
+│       └── catalog.ts   # Search API
 ├── schemas/
 │   ├── inputs.ts        # Zod input schemas
 │   └── outputs.ts       # Zod output schemas
 ├── config/
 │   └── metadata.ts      # Server & tool descriptions
-├── index.ts             # Node.js entry
-└── worker.ts            # Workers entry
+├── core/                # v2 fresh-server factory and fetch-native SDK handler
+├── http/                # MCP security/body/auth boundary and Bun OAuth app
+├── index.ts             # Bun dual-server entry
+└── worker.ts            # Cloudflare Worker isolate entry
 ```
 
 ## Troubleshooting

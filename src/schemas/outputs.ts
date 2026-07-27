@@ -71,7 +71,7 @@ export const SpotifySearchBatchOutput = z.object({
     z.object({
       inputIndex: z.number().int().nonnegative(),
       query: z.string(),
-      totals: z.record(z.number()),
+      totals: z.record(z.string(), z.number()),
       items: z.array(
         z.union([
           SlimTrackSchema,
@@ -104,12 +104,12 @@ export const SpotifyStatusOutput = z.object({
     .optional(),
   current_track: SlimTrackSchema.nullable().optional(),
   devices: z.array(SlimDeviceSchema).optional(),
-  devicesById: z.record(SlimDeviceSchema).optional(),
+  devicesById: z.record(z.string(), SlimDeviceSchema).optional(),
   queue: z
     .object({
       current_id: z.string().nullable().optional(),
       next_ids: z.array(z.string()),
-      byId: z.record(SlimTrackSchema).optional(),
+      byId: z.record(z.string(), SlimTrackSchema).optional(),
     })
     .optional(),
 });

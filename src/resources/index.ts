@@ -3,7 +3,7 @@
  * Add resources here if needed.
  */
 
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 
 /**
  * Register resources with the MCP server.
@@ -13,4 +13,3 @@ export function registerResources(_server: McpServer): void {
   // No resources registered yet
   // Add Spotify-specific resources here if needed
 }
-

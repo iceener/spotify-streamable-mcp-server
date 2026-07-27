@@ -3,7 +3,6 @@
  */
 
 import type { SpotifyApi } from '@spotify/web-api-ts-sdk';
-import { config } from '../../config/env.js';
 import { toolsMetadata } from '../../config/metadata.js';
 import {
   type SpotifyControlInput,
@@ -57,7 +56,7 @@ export const spotifyControlTool = defineTool({
   title: toolsMetadata.spotify_control.title,
   description: toolsMetadata.spotify_control.description,
   inputSchema: SpotifyControlInputSchema,
-  outputSchema: SpotifyControlBatchOutput.shape,
+  outputSchema: SpotifyControlBatchOutput,
   annotations: {
     title: toolsMetadata.spotify_control.title,
     readOnlyHint: false,
@@ -172,10 +171,16 @@ export const spotifyControlTool = defineTool({
               current = updatedCurrent;
 
               // Check if track has switched to expected track
-              if (expectedTrackUri && updatedCurrent && typeof updatedCurrent === 'object') {
-                const item = (updatedCurrent as Record<string, unknown>).item as {
-                  uri?: string;
-                } | undefined;
+              if (
+                expectedTrackUri &&
+                updatedCurrent &&
+                typeof updatedCurrent === 'object'
+              ) {
+                const item = (updatedCurrent as Record<string, unknown>).item as
+                  | {
+                      uri?: string;
+                    }
+                  | undefined;
                 if (item?.uri === expectedTrackUri) {
                   // Track switched successfully, no need to poll further
                   break;
@@ -336,7 +341,7 @@ export const spotifyControlTool = defineTool({
       const contentParts: Array<{ type: 'text'; text: string }> = [
         { type: 'text', text: summary },
       ];
-      if (config.SPOTIFY_INCLUDE_JSON_IN_CONTENT) {
+      if (context.spotify.includeJsonInContent) {
         contentParts.push({ type: 'text', text: JSON.stringify(structured) });
       }
       return {

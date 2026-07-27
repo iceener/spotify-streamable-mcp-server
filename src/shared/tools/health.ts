@@ -16,12 +16,12 @@ export const healthTool = defineTool({
   title: 'Health Check',
   description: 'Check server health, uptime, and runtime information',
   inputSchema: healthInputSchema,
-  outputSchema: {
+  outputSchema: z.object({
     status: z.string().describe('Server status'),
     timestamp: z.number().describe('Current timestamp'),
     runtime: z.string().describe('Runtime environment'),
     uptime: z.number().optional().describe('Uptime in seconds (if available)'),
-  },
+  }),
   annotations: {
     title: 'Server Health Check',
     readOnlyHint: true,
@@ -29,18 +29,14 @@ export const healthTool = defineTool({
     idempotentHint: true,
     openWorldHint: false,
   },
-  handler: async (args) => {
+  handler: async (args, context) => {
     const verbose = Boolean(args.verbose);
-
-    // Detect runtime
-    const g = globalThis as Record<string, unknown>;
-    const isWorkers = typeof g.caches !== 'undefined' && !('process' in g);
-    const runtime = isWorkers ? 'cloudflare-workers' : 'node';
+    const isWorkers = context.runtimeName === 'cloudflare-workers';
 
     const result: Record<string, unknown> = {
       status: 'ok',
       timestamp: Date.now(),
-      runtime,
+      runtime: context.runtimeName,
     };
 
     if (verbose) {

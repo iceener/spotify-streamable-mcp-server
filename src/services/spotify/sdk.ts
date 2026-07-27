@@ -1,7 +1,4 @@
-/**
- * Spotify SDK client factory.
- * Provides user-authenticated Spotify API clients using the template's auth context.
- */
+/** Spotify SDK client factories with request-local resolved user credentials. */
 
 import {
   type AccessToken,
@@ -11,24 +8,15 @@ import {
   type SdkConfiguration,
   SpotifyApi,
 } from '@spotify/web-api-ts-sdk';
-import { config } from '../../config/env.js';
-import { getTokenStore } from '../../shared/storage/singleton.js';
-import type { ToolContext } from '../../shared/tools/types.js';
+import type {
+  SpotifyToolConfiguration,
+  ToolContext,
+} from '../../shared/tools/types.js';
 import { sharedLogger as logger } from '../../shared/utils/logger.js';
-import { refreshSpotifyTokens } from './oauth.js';
-
-// ---------------------------------------------------------------------------
-// Response Validator
-// ---------------------------------------------------------------------------
 
 const responseValidator: IValidateResponses = {
   async validateResponse(response: Response): Promise<void> {
-    if (response.status === 204) {
-      return;
-    }
-    if (response.ok) {
-      return;
-    }
+    if (response.status === 204 || response.ok) return;
     const body = await response.text().catch(() => '');
     const error = new Error(
       `Spotify request failed: ${response.status} ${response.statusText}${
@@ -40,11 +28,6 @@ const responseValidator: IValidateResponses = {
   },
 };
 
-/**
- * Custom deserializer that handles non-JSON responses gracefully.
- * The npm version of @spotify/web-api-ts-sdk doesn't catch JSON.parse errors,
- * but some Spotify endpoints (e.g., queue) return non-JSON responses.
- */
 const responseDeserializer = {
   async deserialize<T>(response: Response): Promise<T> {
     const text = await response.text();
@@ -52,7 +35,6 @@ const responseDeserializer = {
       try {
         return JSON.parse(text) as T;
       } catch {
-        // Non-JSON response (e.g., queue endpoint) - treat as success
         return null as T;
       }
     }
@@ -60,180 +42,84 @@ const responseDeserializer = {
   },
 };
 
-const sdkOptions = { responseValidator, deserializer: responseDeserializer } as const;
-
-// ---------------------------------------------------------------------------
-// App Client (Client Credentials - for non-user APIs like search)
-// ---------------------------------------------------------------------------
+function sdkOptions(config: SpotifyToolConfiguration) {
+  return {
+    responseValidator,
+    deserializer: responseDeserializer,
+    ...(config.fetch ? { fetch: config.fetch } : {}),
+  } as const;
+}
 
 let appClient: SpotifyApi | null = null;
+let appClientKey = '';
+let appClientFetch: typeof globalThis.fetch | undefined;
 
-export function getSpotifyAppClient(): SpotifyApi {
-  const clientId = config.SPOTIFY_CLIENT_ID || config.OAUTH_CLIENT_ID;
-  const clientSecret = config.SPOTIFY_CLIENT_SECRET || config.OAUTH_CLIENT_SECRET;
-
+/** Preserve the deployment-scoped client-credentials client cache. */
+export function getSpotifyAppClient(config: SpotifyToolConfiguration): SpotifyApi {
+  const clientId = config.clientId;
+  const clientSecret = config.clientSecret;
   if (!clientId || !clientSecret) {
     throw new Error('Spotify client credentials are not configured');
   }
 
-  if (!appClient) {
-    const strategy = new ClientCredentialsStrategy(clientId, clientSecret);
-    appClient = new SpotifyApi(strategy, sdkOptions);
+  const key = `${clientId}\u0000${clientSecret}`;
+  if (!appClient || appClientKey !== key || appClientFetch !== config.fetch) {
+    appClient = new SpotifyApi(
+      new ClientCredentialsStrategy(clientId, clientSecret),
+      sdkOptions(config),
+    );
+    appClientKey = key;
+    appClientFetch = config.fetch;
   }
-
   return appClient;
 }
 
-// ---------------------------------------------------------------------------
-// User Client (OAuth - for user-specific APIs)
-// ---------------------------------------------------------------------------
-
-/**
- * Get a Spotify API client for the authenticated user.
- * Uses the provider token from the tool context.
- */
+/** Build a user client from only the verifier-resolved Spotify access token. */
 export async function getSpotifyUserClient(
   context: ToolContext,
 ): Promise<SpotifyApi | null> {
-  const clientId = config.SPOTIFY_CLIENT_ID || config.OAUTH_CLIENT_ID;
-
-  if (!clientId) {
+  if (!context.spotify.clientId) {
     throw new Error('Spotify client id is not configured');
   }
 
-  // Get provider token from context (set by auth middleware)
-  const providerToken = context.providerToken || context.provider?.accessToken;
-
-  if (!providerToken) {
+  if (!context.spotifyAccessToken) {
     logger.info('spotify_sdk', {
-      message: 'No provider token in context',
-      sessionId: context.sessionId,
-      hasProviderToken: !!context.providerToken,
-      hasProvider: !!context.provider,
+      message: 'No resolved Spotify token in tool context',
+      requestId: context.requestId,
     });
     return null;
   }
 
-  // Build access token from context
   const accessToken: AccessToken = {
-    access_token: providerToken,
-    refresh_token: context.provider?.refreshToken || '',
+    access_token: context.spotifyAccessToken,
+    refresh_token: '',
     token_type: 'Bearer',
-    expires_in: context.provider?.expiresAt
-      ? Math.max(1, Math.round((context.provider.expiresAt - Date.now()) / 1000))
-      : 3600,
-    expires: context.provider?.expiresAt || Date.now() + 3600 * 1000,
+    expires_in: 3_600,
+    expires: Date.now() + 3_600_000,
   };
 
-  const strategy = new ContextAuthStrategy(accessToken, context);
-  return new SpotifyApi(strategy, sdkOptions);
+  return new SpotifyApi(
+    new ResolvedAccessTokenStrategy(accessToken),
+    sdkOptions(context.spotify),
+  );
 }
 
-// ---------------------------------------------------------------------------
-// Context-based Auth Strategy
-// ---------------------------------------------------------------------------
-
 /**
- * Auth strategy that uses tokens from the request context.
- * Handles token refresh automatically.
+ * The OAuth verifier refreshes aliases before tool dispatch. This strategy
+ * intentionally cannot see or refresh provider refresh tokens.
  */
-class ContextAuthStrategy implements IAuthStrategy {
-  private current: AccessToken;
-  private context: ToolContext;
+class ResolvedAccessTokenStrategy implements IAuthStrategy {
+  constructor(private readonly accessToken: AccessToken) {}
 
-  constructor(initialToken: AccessToken, context: ToolContext) {
-    this.current = initialToken;
-    this.context = context;
+  setConfiguration(_configuration: SdkConfiguration): void {}
+
+  async getOrCreateAccessToken(): Promise<AccessToken> {
+    return this.accessToken;
   }
 
-  public setConfiguration(_configuration: SdkConfiguration): void {
-    // No-op: not needed for our context-based approach
+  async getAccessToken(): Promise<AccessToken> {
+    return this.accessToken;
   }
 
-  public async getOrCreateAccessToken(): Promise<AccessToken> {
-    const now = Date.now();
-
-    // Check if token is expired or about to expire
-    if (this.current.expires && this.current.expires <= now) {
-      return this.refreshToken();
-    }
-
-    // Proactive refresh if within 30 seconds of expiry
-    if (this.current.expires && this.current.expires - now < 30_000) {
-      try {
-        return await this.refreshToken();
-      } catch (error) {
-        logger.warning('spotify_sdk', {
-          message: 'Silent refresh failed, continuing with existing token',
-          error: (error as Error).message,
-        });
-      }
-    }
-
-    return this.current;
-  }
-
-  public async getAccessToken(): Promise<AccessToken | null> {
-    return this.current;
-  }
-
-  public removeAccessToken(): void {
-    // No-op: we don't persist tokens in this strategy
-  }
-
-  private async refreshToken(): Promise<AccessToken> {
-    const refreshToken =
-      this.current.refresh_token || this.context.provider?.refreshToken;
-
-    if (!refreshToken) {
-      throw new Error('No refresh token available');
-    }
-
-    const refreshed = await refreshSpotifyTokens({ refreshToken });
-    const accessToken = refreshed.access_token?.trim();
-
-    if (!accessToken) {
-      throw new Error('Spotify refresh payload missing access_token');
-    }
-
-    const newRefreshToken = refreshed.refresh_token?.trim() || refreshToken;
-    const expiresInSeconds = Number(refreshed.expires_in ?? 3600);
-    const expiresAt = Date.now() + expiresInSeconds * 1000;
-
-    // Update the token store if we have an RS token reference
-    const rsToken = this.context.authHeaders?.authorization?.replace('Bearer ', '');
-    if (rsToken) {
-      try {
-        const store = getTokenStore();
-        const record = await store.getByRsAccess(rsToken);
-        if (record) {
-          // Update the token store with refreshed provider tokens
-          await store.storeRsMapping(
-            rsToken,
-            {
-              access_token: accessToken,
-              refresh_token: newRefreshToken,
-              expires_at: expiresAt,
-            },
-            record.rs_refresh_token,
-          );
-        }
-      } catch (error) {
-        logger.warning('spotify_sdk', {
-          message: 'Failed to update token store after refresh',
-          error: (error as Error).message,
-        });
-      }
-    }
-
-    this.current = {
-      access_token: accessToken,
-      refresh_token: newRefreshToken,
-      token_type: refreshed.token_type ?? 'Bearer',
-      expires_in: expiresInSeconds,
-      expires: expiresAt,
-    };
-
-    return this.current;
-  }
+  removeAccessToken(): void {}
 }

@@ -168,7 +168,8 @@ export class KvTokenStore implements TokenStore {
       return this.fallback.updateByRsRefresh(rsRefresh, provider, maybeNewRsAccess);
     }
 
-    const rsAccessChanged = maybeNewRsAccess && maybeNewRsAccess !== existing.rs_access_token;
+    const rsAccessChanged =
+      maybeNewRsAccess && maybeNewRsAccess !== existing.rs_access_token;
     const next: RsRecord = {
       rs_access_token: maybeNewRsAccess || existing.rs_access_token,
       rs_refresh_token: rsRefresh,
@@ -334,10 +335,9 @@ export class KvSessionStore implements SessionStore {
   }
 
   async ensure(sessionId: string): Promise<void> {
-    // Memory-only session ensure - no KV writes
-    // Sessions are ephemeral per-isolate state; the actual session state
-    // (sessionStateMap, cancellationRegistry) is already memory-only.
-    // This saves 1 write operation per request with new session ID.
+    // Memory-only compatibility path. The MCP v2 runtime never calls this:
+    // protocol HTTP sessions were removed, while old stored session records
+    // remain readable for rollback.
     const existing = await this.fallback.get(sessionId);
     if (!existing) {
       await this.fallback.put(sessionId, { created_at: Date.now() });

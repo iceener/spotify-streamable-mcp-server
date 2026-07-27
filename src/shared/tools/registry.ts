@@ -1,9 +1,4 @@
-/**
- * Shared tool registry for Spotify MCP.
- * Tools defined here work in both Node.js and Cloudflare Workers.
- */
-
-import type { ZodObject, ZodRawShape } from 'zod';
+import type { z } from 'zod';
 import { healthTool } from './health.js';
 import { playerStatusTool } from './player-status.js';
 import { searchCatalogTool } from './search-catalog.js';
@@ -12,53 +7,43 @@ import { spotifyLibraryTool } from './spotify-library.js';
 import { spotifyPlaylistTool } from './spotify-playlist.js';
 import type { ToolContext, ToolResult } from './types.js';
 
-// Re-export types for convenience
 export type { SharedToolDefinition, ToolContext, ToolResult } from './types.js';
 export { defineTool } from './types.js';
 
-/**
- * Simplified tool interface for the registry (type-erased for storage).
- */
 export interface RegisteredTool {
   name: string;
   title?: string;
   description: string;
-  inputSchema: ZodObject<ZodRawShape>;
-  outputSchema?: ZodRawShape;
-  annotations?: Record<string, unknown>;
+  inputSchema: z.ZodType;
+  outputSchema?: z.ZodType;
+  annotations?: {
+    title?: string;
+    readOnlyHint?: boolean;
+    destructiveHint?: boolean;
+    idempotentHint?: boolean;
+    openWorldHint?: boolean;
+  };
   handler: (args: Record<string, unknown>, context: ToolContext) => Promise<ToolResult>;
 }
 
-/**
- * All shared tools available in both runtimes.
- */
+/** The six public Spotify MCP tool contracts, in stable discovery order. */
 export const sharedTools: RegisteredTool[] = [
-  healthTool as unknown as RegisteredTool,
-  playerStatusTool as unknown as RegisteredTool,
-  searchCatalogTool as unknown as RegisteredTool,
-  spotifyControlTool as unknown as RegisteredTool,
-  spotifyPlaylistTool as unknown as RegisteredTool,
-  spotifyLibraryTool as unknown as RegisteredTool,
-];
+  healthTool,
+  playerStatusTool,
+  searchCatalogTool,
+  spotifyControlTool,
+  spotifyPlaylistTool,
+  spotifyLibraryTool,
+] as RegisteredTool[];
 
-/**
- * Get a tool by name.
- */
 export function getSharedTool(name: string): RegisteredTool | undefined {
-  return sharedTools.find((t) => t.name === name);
+  return sharedTools.find((tool) => tool.name === name);
 }
 
-/**
- * Get all tool names.
- */
 export function getSharedToolNames(): string[] {
-  return sharedTools.map((t) => t.name);
+  return sharedTools.map((tool) => tool.name);
 }
 
-/**
- * Execute a shared tool by name.
- * Handles input validation, output validation, and error wrapping.
- */
 export async function executeSharedTool(
   name: string,
   args: Record<string, unknown>,
@@ -72,62 +57,36 @@ export async function executeSharedTool(
     };
   }
 
-  try {
-    // Check for cancellation before starting
-    if (context.signal?.aborted) {
-      return {
-        content: [{ type: 'text', text: 'Operation was cancelled' }],
-        isError: true,
-      };
-    }
-
-    // Validate input using Zod schema
-    const parseResult = tool.inputSchema.safeParse(args);
-    if (!parseResult.success) {
-      const errors = parseResult.error.errors
-        .map(
-          (e: { path: (string | number)[]; message: string }) =>
-            `${e.path.join('.')}: ${e.message}`,
-        )
-        .join(', ');
-      return {
-        content: [{ type: 'text', text: `Invalid input: ${errors}` }],
-        isError: true,
-      };
-    }
-
-    const result = await tool.handler(
-      parseResult.data as Record<string, unknown>,
-      context,
-    );
-
-    // Validate outputSchema compliance (per MCP spec)
-    if (tool.outputSchema && !result.isError) {
-      if (!result.structuredContent) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: 'Tool with outputSchema must return structuredContent (unless isError is true)',
-            },
-          ],
-          isError: true,
-        };
-      }
-    }
-
-    return result;
-  } catch (error) {
-    // Check if this was an abort
-    if (context.signal?.aborted) {
-      return {
-        content: [{ type: 'text', text: 'Operation was cancelled' }],
-        isError: true,
-      };
-    }
-
+  if (context.signal.aborted) {
     return {
-      content: [{ type: 'text', text: `Tool error: ${(error as Error).message}` }],
+      content: [{ type: 'text', text: 'Operation was cancelled' }],
+      isError: true,
+    };
+  }
+
+  const parsed = tool.inputSchema.safeParse(args);
+  if (!parsed.success) {
+    const errors = parsed.error.issues
+      .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
+      .join(', ');
+    return {
+      content: [{ type: 'text', text: `Invalid input: ${errors}` }],
+      isError: true,
+    };
+  }
+
+  try {
+    return await tool.handler(parsed.data as Record<string, unknown>, context);
+  } catch (error) {
+    return {
+      content: [
+        {
+          type: 'text',
+          text: context.signal.aborted
+            ? 'Operation was cancelled'
+            : `Tool error: ${(error as Error).message}`,
+        },
+      ],
       isError: true,
     };
   }

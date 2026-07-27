@@ -1,0 +1,41 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "spotify-mcp",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-07-27",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "vars": {
+    "MCP_NAME": "mcp-spotify",
+    "MCP_TITLE": "Spotify Music",
+    "MCP_VERSION": "1.0.0",
+    "MCP_LEGACY_MODE": "stateless",
+    "MCP_MAX_REQUEST_BYTES": "1048576",
+    "AUTH_ENABLED": "true",
+    "SPOTIFY_ACCOUNTS_URL": "https://accounts.spotify.com",
+    "SPOTIFY_API_URL": "https://api.spotify.com/v1",
+    "OAUTH_SCOPES": "playlist-read-private playlist-read-collaborative playlist-modify-public playlist-modify-private user-read-playback-state user-modify-playback-state user-read-currently-playing user-library-read user-library-modify",
+    "OAUTH_REDIRECT_ALLOW_ALL": "false",
+    "OAUTH_REDIRECT_ALLOWLIST": "alice://oauth/callback,https://agi.overment.com/mcp/oauth/spotify/callback,https://claude.ai/api/mcp/auth_callback,https://claude.com/api/mcp/auth_callback,https://ai.overment.com/api/mcp/oauth/spotify/callback,https://alice.overment.ai,http://127.0.0.1:3000/v1/mcp/oauth/callback",
+    "OAUTH_REDIRECT_URI": "https://alice.overment.ai/api/mcp/oauth/callback",
+    "NODE_ENV": "production",
+    "LOG_LEVEL": "info"
+  },
+  "kv_namespaces": [
+    {
+      "binding": "TOKENS",
+      "id": "e728cd6ee21c4c65901de43be847bb81"
+    }
+  ],
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1
+    },
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 0.1
+    }
+  }
+}

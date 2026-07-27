@@ -3,7 +3,7 @@
  * Add prompt templates here if needed.
  */
 
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 
 /**
  * Register prompts with the MCP server.
@@ -13,39 +13,3 @@ export function registerPrompts(_server: McpServer): void {
   // No prompts registered yet
   // Add Spotify-specific prompts here if needed
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
