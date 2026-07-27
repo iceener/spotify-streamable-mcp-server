@@ -17,6 +17,7 @@ export type RsRecord = {
 
 export type Transaction = {
   codeChallenge: string;
+  redirectUri: string;
   state?: string;
   scope?: string;
   createdAt: number;

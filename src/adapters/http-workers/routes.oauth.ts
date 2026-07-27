@@ -59,7 +59,6 @@ export function attachOAuthRoutes(
 
       logger.info('oauth_workers', {
         message: 'Authorize redirect',
-        url: result.redirectTo,
       });
       return redirectResponse(result.redirectTo);
     } catch (error) {

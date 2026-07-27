@@ -1,4 +1,4 @@
-// Core OAuth flow logic: PKCE, state encoding, provider token exchange
+// Core OAuth flow logic: PKCE, opaque state, provider token exchange
 // Provider-agnostic version from Spotify MCP
 
 import { createHash, randomBytes } from 'node:crypto';
@@ -37,35 +37,6 @@ function b64url(input: Buffer | Uint8Array): string {
     base64 = btoa(binary);
   }
   return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
-}
-
-function b64urlEncodeJson(obj: unknown): string {
-  try {
-    const json = JSON.stringify(obj);
-    if (typeof Buffer !== 'undefined') {
-      return b64url(Buffer.from(json, 'utf8'));
-    }
-    const encoder = new TextEncoder();
-    return b64url(encoder.encode(json));
-  } catch {
-    return '';
-  }
-}
-
-function b64urlDecodeJson<T = unknown>(value: string): T | null {
-  try {
-    const padded = value.replace(/-/g, '+').replace(/_/g, '/');
-    let json: string;
-    if (typeof Buffer !== 'undefined') {
-      const buf = Buffer.from(padded, 'base64');
-      json = buf.toString('utf8');
-    } else {
-      json = atob(padded);
-    }
-    return JSON.parse(json) as T;
-  } catch {
-    return null;
-  }
 }
 
 // Async version for Workers/Node
@@ -107,9 +78,13 @@ function isAllowedRedirect(uri: string, config: OAuthConfig, isDev: boolean): bo
       return true;
     }
 
-    return (
-      allowed.has(`${url.protocol}//${url.host}${url.pathname}`) || allowed.has(uri)
-    );
+    return [...allowed].some((candidate) => {
+      try {
+        return new URL(candidate).href === url.href;
+      } catch {
+        return false;
+      }
+    });
   } catch {
     return false;
   }
@@ -132,6 +107,9 @@ export async function handleAuthorize(
   if (!input.redirectUri) {
     throw new Error('invalid_request: redirect_uri is required');
   }
+  if (!isAllowedRedirect(input.redirectUri, oauthConfig, options.isDev)) {
+    throw new Error('invalid_request: redirect_uri is not allowed');
+  }
   if (!input.codeChallenge || input.codeChallengeMethod !== 'S256') {
     throw new Error(
       'invalid_request: PKCE code_challenge with S256 method is required',
@@ -141,6 +119,7 @@ export async function handleAuthorize(
   const txnId = generateOpaqueToken(16);
   await store.saveTransaction(txnId, {
     codeChallenge: input.codeChallenge,
+    redirectUri: input.redirectUri,
     state: input.state,
     createdAt: Date.now(),
     scope: input.requestedScope,
@@ -172,15 +151,9 @@ export async function handleAuthorize(
       authUrl.searchParams.set('scope', scopeToUse);
     }
 
-    const compositeState =
-      b64urlEncodeJson({
-        tid: txnId,
-        cs: input.state,
-        cr: input.redirectUri,
-        sid: input.sid,
-      }) || txnId;
-
-    authUrl.searchParams.set('state', compositeState);
+    // Provider-visible state is only a random transaction handle. Client state,
+    // redirect URI, PKCE challenge, and MCP session correlation stay server-side.
+    authUrl.searchParams.set('state', txnId);
 
     logger.debug('oauth_authorize', {
       message: 'Redirect URL constructed',
@@ -201,11 +174,7 @@ export async function handleAuthorize(
   const code = generateOpaqueToken(16);
   await store.saveCode(code, txnId);
 
-  const safe = isAllowedRedirect(input.redirectUri, oauthConfig, options.isDev)
-    ? input.redirectUri
-    : oauthConfig.redirectUri;
-
-  const redirect = new URL(safe);
+  const redirect = new URL(input.redirectUri);
   redirect.searchParams.set('code', code);
   if (input.state) {
     redirect.searchParams.set('state', input.state);
@@ -232,15 +201,7 @@ export async function handleProviderCallback(
     tokenEndpointPath?: string;
   },
 ): Promise<CallbackResult> {
-  const decoded =
-    b64urlDecodeJson<{
-      tid?: string;
-      cs?: string;
-      cr?: string;
-      sid?: string;
-    }>(input.compositeState) || {};
-
-  const txnId = decoded.tid || input.compositeState;
+  const txnId = input.compositeState;
   const txn = await store.getTransaction(txnId);
 
   if (!txn) {
@@ -249,6 +210,9 @@ export async function handleProviderCallback(
       txnId,
     });
     throw new Error('unknown_txn');
+  }
+  if (!isAllowedRedirect(txn.redirectUri, oauthConfig, options.isDev)) {
+    throw new Error('invalid_redirect_uri');
   }
 
   // Exchange code with provider
@@ -350,15 +314,10 @@ export async function handleProviderCallback(
     message: 'RS code generated',
   });
 
-  const clientRedirect = decoded.cr || oauthConfig.redirectUri;
-  const safe = isAllowedRedirect(clientRedirect, oauthConfig, options.isDev)
-    ? clientRedirect
-    : oauthConfig.redirectUri;
-
-  const redirect = new URL(safe);
+  const redirect = new URL(txn.redirectUri);
   redirect.searchParams.set('code', asCode);
-  if (decoded.cs) {
-    redirect.searchParams.set('state', decoded.cs);
+  if (txn.state) {
+    redirect.searchParams.set('state', txn.state);
   }
 
   return {
@@ -497,7 +456,8 @@ export async function handleToken(
     // Only rotate when provider refresh_token changed (security vs KV quota trade-off)
     // When provider rotates its refresh_token, we rotate RS token for security.
     // Otherwise, keep the same RS token to save KV write operations.
-    const providerRefreshRotated = provider.refresh_token !== rec.provider.refresh_token;
+    const providerRefreshRotated =
+      provider.refresh_token !== rec.provider.refresh_token;
     const newAccess = providerRefreshRotated ? generateOpaqueToken(24) : undefined;
 
     const updated = await store.updateByRsRefresh(
