@@ -16,7 +16,7 @@
     "SPOTIFY_API_URL": "https://api.spotify.com/v1",
     "OAUTH_SCOPES": "playlist-read-private playlist-read-collaborative playlist-modify-public playlist-modify-private user-read-playback-state user-modify-playback-state user-read-currently-playing user-library-read user-library-modify",
     "OAUTH_REDIRECT_ALLOW_ALL": "false",
-    "OAUTH_REDIRECT_ALLOWLIST": "alice://oauth/callback,https://agi.overment.com/mcp/oauth/spotify/callback,https://claude.ai/api/mcp/auth_callback,https://claude.com/api/mcp/auth_callback,https://ai.overment.com/api/mcp/oauth/spotify/callback,https://alice.overment.ai,http://127.0.0.1:3000/v1/mcp/oauth/callback",
+    "OAUTH_REDIRECT_ALLOWLIST": "alice://oauth/callback,https://agi.overment.com/mcp/oauth/spotify/callback,https://agi.overment.com/v1/mcp/oauth/callback,https://agi.overment.com/api/mcp/oauth/callback,https://claude.ai/api/mcp/auth_callback,https://claude.com/api/mcp/auth_callback,https://ai.overment.com/api/mcp/oauth/spotify/callback,https://ai.overment.com/v1/mcp/oauth/callback,https://ai.overment.com/api/mcp/oauth/callback,https://alice.overment.ai,https://alice.overment.ai/v1/mcp/oauth/callback,https://alice.overment.ai/api/mcp/oauth/callback,http://127.0.0.1:3000/v1/mcp/oauth/callback",
     "OAUTH_REDIRECT_URI": "https://alice.overment.ai/api/mcp/oauth/callback",
     "NODE_ENV": "production",
     "LOG_LEVEL": "info"
@@ -25,6 +25,18 @@
     {
       "binding": "TOKENS",
       "id": "e728cd6ee21c4c65901de43be847bb81"
+    }
+  ],
+  // Previous deploy on feat/modern-mcp-protocol created OAuthAuthorityDurableObject.
+  // Current MCP SDK v2 runtime no longer uses DOs — keep the applied tag and delete the class.
+  "migrations": [
+    {
+      "tag": "v1-oauth-authority",
+      "new_sqlite_classes": ["OAuthAuthorityDurableObject"]
+    },
+    {
+      "tag": "v2-remove-oauth-authority",
+      "deleted_classes": ["OAuthAuthorityDurableObject"]
     }
   ],
   "observability": {

@@ -60,6 +60,11 @@ export function generateOpaqueToken(bytes = 32): string {
   return b64url(array);
 }
 
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
+
+const isOriginAllowlistEntry = (candidate: URL): boolean =>
+  candidate.pathname === '/' || candidate.pathname === '';
+
 // biome-ignore lint/correctness/noUnusedFunctionParameters: preserve the existing OAuth flow signature while loopback handling is environment-independent.
 function isAllowedRedirect(uri: string, config: OAuthConfig, isDev: boolean): boolean {
   try {
@@ -67,45 +72,48 @@ function isAllowedRedirect(uri: string, config: OAuthConfig, isDev: boolean): bo
       config.redirectAllowlist.concat([config.redirectUri]).filter(Boolean),
     );
     const url = new URL(uri);
-    const isExactConfiguredRedirect = [...allowed].some((candidate) => {
-      try {
-        return new URL(candidate).href === url.href;
-      } catch {
-        return false;
-      }
-    });
-    const isConfiguredRedirectVariant = [...allowed].some((candidate) => {
-      try {
-        const configured = new URL(candidate);
-        const normalized = (pathname: string) => pathname.replace(/\/+$/, '');
-        return (
-          configured.origin === url.origin &&
-          normalized(configured.pathname) === normalized(url.pathname)
-        );
-      } catch {
-        return false;
-      }
-    });
-    if (!isExactConfiguredRedirect && isConfiguredRedirectVariant) {
+    if (url.search || url.hash) {
       return false;
     }
 
-    const loopback = new Set(['localhost', '127.0.0.1', '::1']);
-    if (loopback.has(url.hostname)) {
-      return true;
-    }
-
-    if (config.redirectAllowAll) {
-      return true;
-    }
-
-    return [...allowed].some((candidate) => {
+    const parsedAllowed = [...allowed].flatMap((candidate) => {
       try {
-        return new URL(candidate).href === url.href;
+        return [new URL(candidate)];
       } catch {
-        return false;
+        return [];
       }
     });
+
+    if (parsedAllowed.some((candidate) => candidate.href === url.href)) {
+      return true;
+    }
+
+    // A bare origin in the allowlist (`https://app.example/`) means any path
+    // on that origin, so hosts like Wonderlands can use a stable callback.
+    if (
+      parsedAllowed.some(
+        (candidate) => isOriginAllowlistEntry(candidate) && candidate.origin === url.origin,
+      )
+    ) {
+      return true;
+    }
+
+    const normalized = (pathname: string) => pathname.replace(/\/+$/, '');
+    const isConfiguredRedirectVariant = parsedAllowed.some(
+      (candidate) =>
+        !isOriginAllowlistEntry(candidate) &&
+        candidate.origin === url.origin &&
+        normalized(candidate.pathname) === normalized(url.pathname),
+    );
+    if (isConfiguredRedirectVariant) {
+      return false;
+    }
+
+    if (LOOPBACK_HOSTS.has(url.hostname)) {
+      return true;
+    }
+
+    return config.redirectAllowAll;
   } catch {
     return false;
   }
@@ -113,16 +121,24 @@ function isAllowedRedirect(uri: string, config: OAuthConfig, isDev: boolean): bo
 
 function isExplicitlyConfiguredRedirect(uri: string, config: OAuthConfig): boolean {
   if (config.redirectAllowAll) return true;
-  return config.redirectAllowlist
-    .concat([config.redirectUri])
-    .filter(Boolean)
-    .some((candidate) => {
-      try {
-        return new URL(candidate).href === new URL(uri).href;
-      } catch {
-        return false;
-      }
-    });
+  try {
+    const url = new URL(uri);
+    if (url.search || url.hash) return false;
+    return config.redirectAllowlist
+      .concat([config.redirectUri])
+      .filter(Boolean)
+      .some((candidate) => {
+        try {
+          const configured = new URL(candidate);
+          if (configured.href === url.href) return true;
+          return isOriginAllowlistEntry(configured) && configured.origin === url.origin;
+        } catch {
+          return false;
+        }
+      });
+  } catch {
+    return false;
+  }
 }
 
 /**

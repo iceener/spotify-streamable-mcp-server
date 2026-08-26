@@ -37,6 +37,34 @@ afterEach(() => {
 });
 
 describe('OAuth client redirect binding', () => {
+  test('allows any path on an origin-only allowlist entry', async () => {
+    const store = new MemoryTokenStore();
+    try {
+      const authorization = await handleAuthorize(
+        {
+          redirectUri: 'https://fallback.example/v1/mcp/oauth/callback',
+          codeChallenge: 'challenge',
+          codeChallengeMethod: 'S256',
+          state: 'client-state',
+        },
+        store,
+        { ...providerConfig, clientId: '', clientSecret: '' },
+        {
+          redirectUri: 'https://fallback.example/',
+          redirectAllowlist: [],
+          redirectAllowAll: false,
+        },
+        { ...options, isDev: true },
+      );
+
+      expect(authorization.redirectTo).toContain(
+        'https://fallback.example/v1/mcp/oauth/callback',
+      );
+    } finally {
+      store.stopCleanup();
+    }
+  });
+
   test('rejects an unapproved redirect instead of falling back with a code', async () => {
     const store = new MemoryTokenStore();
     try {
