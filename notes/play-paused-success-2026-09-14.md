@@ -26,6 +26,12 @@ References retrieved for this diagnosis:
 - https://developer.spotify.com/documentation/web-api/reference/get-a-users-available-devices
 - https://developer.spotify.com/documentation/web-api/reference/get-track
 
+## Native checks and handoff
+
+At code candidate `f469567`, `bun test` passed 56 tests / 238 assertions. Both TypeScript projects, Bun build, Worker dry-run build, and actual local workerd modern/legacy smoke passed. `lint` and `format:check` failed on the unchanged `src/shared/oauth/flow.ts:95`; running Biome against that file from base `b79e4d8` reproduced the same failure. `types:worker:check` reported stale `worker-configuration.d.ts`; generated bindings, Wrangler config, package manifest, and lockfile are unchanged from base. No out-of-scope cleanup was applied. Biome passed all eight changed code/test/snapshot files. Early TypeScript probes caught test-fixture/schema typing mistakes; those were corrected before the successful native typecheck.
+
+Reviewer artifacts (including the red-before regression, focused/protocol checks, complete native logs, baseline formatting probe, and retrieved Spotify references) are copied outside the repair worktree to `/Users/overment/playground/alice-app/tools/spotify-mcp/.limen/artifacts/play-paused-success-a8c4fa25/`.
+
 Integration constraint: the normal branch is `main`, but the primary Spotify MCP checkout has unrelated uncommitted OAuth/storage/runtime work. Do not merge into or clean that checkout as part of this repair. The isolated repair branch can be reviewed and integrated once that work is safely checkpointed.
 
 Source seam: `src/shared/tools/spotify-control.ts`; verification: `src/shared/tools/playback-verification.ts`; state decoding: `src/types/spotify.codecs.ts`. The SDK 1.2.0 also serializes play’s optional position as `positionMs`, not Spotify’s `position_ms`; this is separate from the supplied plain-track reproduction and has not been changed in this slice.
