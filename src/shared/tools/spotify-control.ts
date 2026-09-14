@@ -20,7 +20,6 @@ import {
   shuffle as apiShuffle,
   transfer as apiTransfer,
   volume as apiVolume,
-  getCurrentlyPlaying,
   getPlayerState,
   listDevices,
 } from '../../services/spotify/player.js';
@@ -29,6 +28,7 @@ import { getSpotifyUserClient } from '../../services/spotify/sdk.js';
 type ErrorCode = 'unauthorized' | 'forbidden' | 'rate_limited' | 'bad_response';
 
 import { sharedLogger as logger } from '../utils/logger.js';
+import { verifyPlayback } from './playback-verification.js';
 import { defineTool, type ToolContext, type ToolResult } from './types.js';
 
 function toolError(message: string, code?: ErrorCode): ToolResult {
@@ -68,6 +68,18 @@ export const spotifyControlTool = defineTool({
       const client = await getSpotifyUserClient(context);
       if (!client) {
         return toolError('Not signed in. Please authenticate.', 'unauthorized');
+      }
+
+      const playbackActions = ['play', 'pause', 'next', 'previous', 'seek', 'transfer'];
+      if (
+        args.parallel &&
+        args.operations.some((op) => ['play', 'transfer'].includes(op.action)) &&
+        args.operations.filter((op) => playbackActions.includes(op.action)).length > 1
+      ) {
+        return toolError(
+          'Conflicting playback operations cannot run in parallel: Spotify does not guarantee their order. Retry with parallel=false so play/transfer can be verified before the next operation.',
+          'bad_response',
+        );
       }
 
       const runOp = (
@@ -120,218 +132,36 @@ export const spotifyControlTool = defineTool({
         }
       }
 
+      // This is a final batch snapshot, not verification of earlier operations
+      // (a later pause/next/play may intentionally replace their observed state).
       try {
-        const successfulPlayIndices = results
-          .map((r, i) => ({ r, i }))
-          .filter(({ r }) => r.ok && r.action === 'play')
-          .map(({ i }) => i);
-        const lastSuccessfulPlayIndex =
-          successfulPlayIndices.length > 0
-            ? successfulPlayIndices[successfulPlayIndices.length - 1]
-            : undefined;
-        const lastPlayOp =
-          typeof lastSuccessfulPlayIndex === 'number'
-            ? args.operations[lastSuccessfulPlayIndex]
-            : undefined;
-
-        let [player, current] = await Promise.all([
-          getPlayerState(client),
-          getCurrentlyPlaying(client).catch(() => null),
-        ]);
-
-        if (successfulPlayIndices.length > 0) {
-          // Poll for track switch with retries instead of fixed delay
-          const expectedTrackUri = (() => {
-            const lastPlayOp =
-              typeof lastSuccessfulPlayIndex === 'number'
-                ? args.operations[lastSuccessfulPlayIndex]
-                : undefined;
-            if (!lastPlayOp) return undefined;
-            if (Array.isArray(lastPlayOp.uris) && lastPlayOp.uris.length > 0) {
-              return lastPlayOp.uris[0];
-            }
-            if (lastPlayOp.offset?.uri) {
-              return lastPlayOp.offset.uri;
-            }
-            return undefined;
-          })();
-
-          const maxAttempts = 4;
-          const delayMs = 1000;
-
-          for (let attempt = 0; attempt < maxAttempts; attempt++) {
-            await new Promise((resolve) => setTimeout(resolve, delayMs));
-
-            try {
-              const [updatedPlayer, updatedCurrent] = await Promise.all([
-                getPlayerState(client),
-                getCurrentlyPlaying(client).catch(() => null),
-              ]);
-              player = updatedPlayer;
-              current = updatedCurrent;
-
-              // Check if track has switched to expected track
-              if (
-                expectedTrackUri &&
-                updatedCurrent &&
-                typeof updatedCurrent === 'object'
-              ) {
-                const item = (updatedCurrent as Record<string, unknown>).item as
-                  | {
-                      uri?: string;
-                    }
-                  | undefined;
-                if (item?.uri === expectedTrackUri) {
-                  // Track switched successfully, no need to poll further
-                  break;
-                }
-              } else if (!expectedTrackUri) {
-                // No specific track expected, just wait once
-                break;
-              }
-            } catch {
-              // Ignore re-query errors
-            }
-          }
-        }
-        let deviceName: string | undefined;
-        let volumePercent: number | undefined;
-        let currentTrackUri: string | undefined;
-        let currentTrackName: string | undefined;
-        let contextUri: string | undefined;
-        let contextName: string | undefined;
-
-        if (player?.device?.id) {
-          try {
-            const devices = await listDevices(client);
-            const active = devices?.devices?.find((d) => d?.id === player.device?.id);
-            if (active) {
-              deviceName = (active.name ?? undefined) as string | undefined;
-              volumePercent = (active.volume_percent ?? undefined) as
-                | number
-                | undefined;
-            }
-          } catch {}
-        }
-        if (player?.context?.uri) {
-          contextUri = String(player.context.uri);
-          try {
-            const m = /^spotify:(playlist|album|artist):(.+)$/.exec(contextUri);
-            if (m) {
-              const [, kind, id] = m;
-              const endpoint =
-                kind === 'playlist'
-                  ? `playlists/${id}`
-                  : kind === 'album'
-                    ? `albums/${id}`
-                    : `artists/${id}`;
-              const contextResponse = await client
-                .makeRequest<unknown>('GET', endpoint)
-                .catch(() => null);
-              if (contextResponse && typeof contextResponse === 'object') {
-                const nm = (contextResponse as Record<string, unknown>).name as
-                  | string
-                  | undefined;
-                if (nm) {
-                  contextName = nm;
-                }
-              }
-            }
-          } catch {}
-        }
-        if (current && typeof current === 'object') {
-          const item = (current as Record<string, unknown>).item as {
-            uri?: string;
-            name?: string;
-          };
-          if (item) {
-            currentTrackUri = item.uri as string | undefined;
-            currentTrackName = item.name as string | undefined;
-          }
-        }
-
-        const didVolume = okActions.includes('volume');
-        const didPlayLike = okActions.some((a) =>
-          ['play', 'pause', 'next', 'previous', 'seek', 'transfer'].includes(a),
-        );
-
+        const player = await getPlayerState(client);
+        const devices = await listDevices(client).catch(() => null);
+        const device = devices?.devices.find((d) => d.id === player?.device?.id);
+        const deviceLabel = device ? ` on '${device.name}'` : '';
         const statusBits: string[] = [];
         if (typeof player?.is_playing === 'boolean') {
           statusBits.push(
             player.is_playing
-              ? `Now playing${deviceName ? ` on '${deviceName}'` : ''}.`
-              : `Playback is paused${deviceName ? ` on '${deviceName}'` : ''}.`,
+              ? `Now playing${deviceLabel}.`
+              : `Playback is paused${deviceLabel}.`,
           );
+        } else {
+          statusBits.push('Playback status unavailable.');
         }
-        if (currentTrackName) {
-          statusBits.push(`Current track: '${currentTrackName}'.`);
+        if (player?.item?.name) {
+          statusBits.push(`Current track: '${player.item.name}'.`);
         }
-        if (didVolume && typeof volumePercent === 'number') {
-          statusBits.push(`Volume: ${volumePercent}%`);
+        if (
+          okActions.includes('volume') &&
+          typeof device?.volume_percent === 'number'
+        ) {
+          statusBits.push(`Volume: ${device.volume_percent}%.`);
         }
-
-        if (lastPlayOp) {
-          const contextVerified = lastPlayOp.context_uri
-            ? contextUri === lastPlayOp.context_uri
-            : undefined;
-          let trackVerified: boolean | undefined;
-          let expectedTrackUri: string | undefined;
-
-          if (Array.isArray(lastPlayOp.uris) && lastPlayOp.uris.length > 0) {
-            expectedTrackUri = lastPlayOp.uris[0];
-            trackVerified = currentTrackUri
-              ? lastPlayOp.uris.includes(currentTrackUri)
-              : false;
-          } else if (lastPlayOp.offset?.uri) {
-            expectedTrackUri = lastPlayOp.offset.uri;
-            trackVerified = currentTrackUri
-              ? lastPlayOp.offset.uri === currentTrackUri
-              : false;
-          }
-
-          if (contextVerified === true) {
-            statusBits.push(
-              `Context verified: ${contextName ? `'${contextName}' — ` : ''}${
-                contextUri ?? ''
-              }`.trim(),
-            );
-          } else if (contextVerified === false) {
-            statusBits.push(
-              `Context mismatch${
-                contextUri
-                  ? ` (current: ${
-                      contextName ? `'${contextName}' — ` : ''
-                    }${contextUri})`
-                  : ''
-              }.`,
-            );
-          }
-
-          if (trackVerified === true) {
-            statusBits.push(`Track verified: Now playing the requested track.`);
-          } else if (trackVerified === false) {
-            const expectedName = expectedTrackUri
-              ? ` (expected: ${expectedTrackUri})`
-              : '';
-            statusBits.push(
-              `Track may still be switching${expectedName}${
-                currentTrackUri ? ` (current: ${currentTrackUri})` : ''
-              }. Spotify typically takes 1-3 seconds to switch tracks.`,
-            );
-          } else if (expectedTrackUri && !currentTrackUri) {
-            statusBits.push(
-              `Track switching in progress. Expected track: ${expectedTrackUri}.`,
-            );
-          }
-        }
-        if (statusBits.length > 0) {
-          summary += ` Status: ${statusBits.join(' ')}`;
-        } else if (successfulPlayIndices.length > 0) {
-          summary += ` Status: Play command sent successfully. Track switching may take 1-3 seconds to complete.`;
-        } else if (didPlayLike) {
-          summary += ` Status: Playback operation completed.`;
-        }
-      } catch {}
+        summary += ` Final status: ${statusBits.join(' ')}`;
+      } catch {
+        summary += ' Final status unavailable; use player_status to check again.';
+      }
 
       const structured: SpotifyControlBatchOutput = {
         _msg: summary,
@@ -398,7 +228,7 @@ async function executeOperation({
           offset: normalizedOffset.value,
           position_ms: operation.position_ms,
         });
-        return { index, action: 'play', ok: true };
+        return { index, action: 'play', ...(await verifyPlayback(client, operation)) };
       }
       case 'pause': {
         await apiPause(client, { device_id: operation.device_id });
@@ -492,6 +322,7 @@ async function executeOperation({
           operation.device_id,
           operation.transfer_play ?? false,
         );
+        const verification = await verifyPlayback(client, operation);
         let toDeviceName: string | undefined;
         try {
           const devices = await listDevices(client);
@@ -503,7 +334,7 @@ async function executeOperation({
         return {
           index,
           action: 'transfer',
-          ok: true,
+          ...verification,
           device_id: operation.device_id,
           device_name: toDeviceName,
           from_device_id: fromDeviceId,
@@ -545,7 +376,15 @@ async function executeOperation({
       error: message.replace(/\s*\[[^\]]+\]$/, ''),
       code,
     };
-    if (/no\s+active\s+device/i.test(message)) {
+    if (code === 'unauthorized') {
+      (result as { note?: string }).note = 'Reconnect Spotify and retry.';
+    } else if (code === 'forbidden') {
+      (result as { note?: string }).note =
+        'Check the Spotify error details: playback requires Premium, user-modify-playback-state permission, and an unrestricted Connect device. Reconnect Spotify if permissions are missing; try the track manually to check availability.';
+    } else if (code === 'rate_limited') {
+      (result as { note?: string }).note =
+        'Wait for Spotify’s rate limit to clear before retrying.';
+    } else if (/no\s+active\s+device/i.test(message)) {
       (result as { note?: string }).note =
         'No active device. Ask the user to open Spotify on any device and retry, or use transfer to a listed device.';
     }

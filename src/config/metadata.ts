@@ -23,7 +23,7 @@ Notes
 - If a call returns Unauthorized, ask the user to authenticate and retry.
 - Prefer small limits and minimal polling unless asked to do otherwise.
 - Use player_status to pick device_id before control. If no active device is found, prompt the user to open Spotify and/or transfer to a listed device.
-- After control actions, the tool includes a concise status. For full details, you can still call player_status. If not playing, ask the user to open Spotify or transfer to a listed device.`,
+- Play and transfer return ok only after observing the requested playback/device state. An accepted command with unconfirmed state is an error, not successful playback; follow its recovery note instead of blindly retrying. Use parallel=false for dependent playback operations such as transfer then play. The final batch status can differ from earlier verified operations (for example play then pause).`,
 } as const;
 
 export const toolsMetadata = {
@@ -43,7 +43,7 @@ export const toolsMetadata = {
     name: 'spotify_control',
     title: 'Control Spotify Playback',
     description:
-      "Control Spotify playback: play, pause, next/previous, seek, shuffle, repeat, volume, transfer, and queue. Accepts a batch of operations and returns per-operation results. Optional parallel=true runs operations concurrently.\n\nUsage notes:\n- To play a specific track from a playlist, set 'context_uri' to the playlist URI (e.g., 'spotify:playlist:...') and set 'offset' to either { position: <zero-based index> } or { uri: 'spotify:track:...' }.\n- Do not provide 'uris' together with 'context_uri' in the same play operation.\n- Use the 'player_status' tool first to get a 'device_id' to target.\n- After issuing play/transfer, call 'player_status' to confirm playback and target device.",
+      "Control Spotify playback: play, pause, next/previous, seek, shuffle, repeat, volume, transfer, and queue. Accepts a batch of operations and returns per-operation results. Optional parallel=true runs operations concurrently.\n\nUsage notes:\n- To play a specific track from a playlist, set 'context_uri' to the playlist URI (e.g., 'spotify:playlist:...') and set 'offset' to either { position: <zero-based index> } or { uri: 'spotify:track:...' }.\n- Do not provide 'uris' together with 'context_uri' in the same play operation.\n- Use the 'player_status' tool first to get a 'device_id' to target.\n- Play/transfer verify playback and target device with up to five state checks; an accepted but unconfirmed command returns ok=false with recovery guidance. Use 'player_status' before retrying.\n- Use parallel=false for dependent playback operations (especially transfer then play); conflicting parallel playback batches are rejected.",
   },
   spotify_playlist: {
     name: 'spotify_playlist',

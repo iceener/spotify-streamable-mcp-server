@@ -12,6 +12,7 @@ export const TrackCodec = z.object({
   id: z.string().nullable().optional(),
   uri: z.string().nullable().optional(),
   name: z.string().nullable().optional(),
+  linked_from: z.object({ uri: z.string().optional() }).nullable().optional(),
   artists: z.array(z.object({ name: z.string().nullable().optional() })).optional(),
   album: z.object({ name: z.string().nullable().optional() }).nullable().optional(),
   duration_ms: z.number().nullable().optional(),
@@ -46,7 +47,8 @@ export const PlayerStateCodec = z.object({
   repeat_state: z.enum(['off', 'track', 'context']).optional(),
   progress_ms: z.number().optional(),
   timestamp: z.number().optional(),
-  device: z.object({ id: z.string().optional() }).nullable().optional(),
+  device: z.object({ id: z.string().nullable().optional() }).nullable().optional(),
+  item: TrackCodec.nullable().optional(),
   context: z.object({ uri: z.string().nullable().optional() }).nullable().optional(),
 });
 export type PlayerStateCodecType = z.infer<typeof PlayerStateCodec>;
