@@ -6,8 +6,8 @@ import { getPlayerState } from '../../services/spotify/player.js';
 type Operation = SpotifyControlInput['operations'][number];
 type Verification = Pick<
   SpotifyControlBatchOutput['results'][number],
-  'ok' | 'code' | 'error' | 'note'
->;
+  'ok' | 'code' | 'error' | 'note' | 'device_id'
+> & { playbackState?: Awaited<ReturnType<typeof getPlayerState>> };
 
 const recovery =
   'Ask the user to open Spotify on the target device, confirm it uses the same Premium account, and play the requested track there once. Then refresh device IDs with player_status and retry. If that track cannot play manually, check its availability/account restrictions; if no tracks play, restart Spotify or choose another Connect device. Do not keep retrying play blindly.';
@@ -63,6 +63,7 @@ export async function verifyPlayback(
         );
       }
       if (needsPlayback) {
+        if (!state.device?.id) issues.push('No playback device identified');
         if (state.is_playing !== true) {
           issues.push(
             state.is_playing === false
@@ -90,6 +91,8 @@ export async function verifyPlayback(
     if (issues.length === 0) {
       return {
         ok: true,
+        device_id: state?.device?.id ?? operation.device_id,
+        playbackState: state,
         note: needsPlayback
           ? 'Playback confirmed by Spotify on the observed device at operation completion.'
           : 'Target device confirmed; transfer did not request playback to start.',

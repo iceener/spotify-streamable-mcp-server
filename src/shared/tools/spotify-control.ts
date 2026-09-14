@@ -87,7 +87,7 @@ export const spotifyControlTool = defineTool({
         index: number,
       ) => executeOperation({ operation, index, client });
 
-      const results = args.parallel
+      const operationResults = args.parallel
         ? await Promise.all(args.operations.map(runOp))
         : await (async () => {
             const acc: Awaited<ReturnType<typeof executeOperation>>[] = [];
@@ -100,6 +100,10 @@ export const spotifyControlTool = defineTool({
             return acc;
           })();
 
+      // Keep the verification snapshot internal; the public result schema stays stable.
+      const results = operationResults.map(
+        ({ playbackState: _state, ...result }) => result,
+      );
       const okActions = results.filter((r) => r.ok).map((r) => r.action);
       const failed = results.filter((r) => !r.ok);
       const failedCount = failed.length;
@@ -134,33 +138,42 @@ export const spotifyControlTool = defineTool({
 
       // This is a final batch snapshot, not verification of earlier operations
       // (a later pause/next/play may intentionally replace their observed state).
-      try {
-        const player = await getPlayerState(client);
-        const devices = await listDevices(client).catch(() => null);
-        const device = devices?.devices.find((d) => d.id === player?.device?.id);
-        const deviceLabel = device ? ` on '${device.name}'` : '';
-        const statusBits: string[] = [];
-        if (typeof player?.is_playing === 'boolean') {
-          statusBits.push(
-            player.is_playing
-              ? `Now playing${deviceLabel}.`
-              : `Playback is paused${deviceLabel}.`,
-          );
-        } else {
-          statusBits.push('Playback status unavailable.');
+      // Failed results already carry observations; do not re-read after a 429/403.
+      if (failedCount === 0) {
+        try {
+          const lastPlaybackResult = operationResults
+            .filter((result) => playbackActions.includes(result.action))
+            .at(-1);
+          // Use the same observation that established success, rather than mix
+          // two potentially inconsistent snapshots into one play result.
+          const player =
+            lastPlaybackResult?.playbackState ?? (await getPlayerState(client));
+          const devices = await listDevices(client).catch(() => null);
+          const device = devices?.devices.find((d) => d.id === player?.device?.id);
+          const deviceLabel = device ? ` on '${device.name}'` : '';
+          const statusBits: string[] = [];
+          if (typeof player?.is_playing === 'boolean') {
+            statusBits.push(
+              player.is_playing
+                ? `Now playing${deviceLabel}.`
+                : `Playback is paused${deviceLabel}.`,
+            );
+          } else {
+            statusBits.push('Playback status unavailable.');
+          }
+          if (player?.item?.name) {
+            statusBits.push(`Current track: '${player.item.name}'.`);
+          }
+          if (
+            okActions.includes('volume') &&
+            typeof device?.volume_percent === 'number'
+          ) {
+            statusBits.push(`Volume: ${device.volume_percent}%.`);
+          }
+          summary += ` Final status: ${statusBits.join(' ')}`;
+        } catch {
+          summary += ' Final status unavailable; use player_status to check again.';
         }
-        if (player?.item?.name) {
-          statusBits.push(`Current track: '${player.item.name}'.`);
-        }
-        if (
-          okActions.includes('volume') &&
-          typeof device?.volume_percent === 'number'
-        ) {
-          statusBits.push(`Volume: ${device.volume_percent}%.`);
-        }
-        summary += ` Final status: ${statusBits.join(' ')}`;
-      } catch {
-        summary += ' Final status unavailable; use player_status to check again.';
       }
 
       const structured: SpotifyControlBatchOutput = {
@@ -189,6 +202,10 @@ export const spotifyControlTool = defineTool({
   },
 });
 
+type OperationResult = SpotifyControlBatchOutput['results'][number] & {
+  playbackState?: Awaited<ReturnType<typeof getPlayerState>>;
+};
+
 type OperationDeps = {
   operation: SpotifyControlInput['operations'][number];
   index: number;
@@ -199,7 +216,7 @@ async function executeOperation({
   operation,
   index,
   client,
-}: OperationDeps): Promise<SpotifyControlBatchOutput['results'][number]> {
+}: OperationDeps): Promise<OperationResult> {
   try {
     switch (operation.action) {
       case 'play': {
@@ -221,14 +238,36 @@ async function executeOperation({
             error: normalizedOffset.error,
           };
         }
+        // Web Players may also report type=Computer. Prefer an active desktop
+        // when no target was specified, but never override an explicit target.
+        let deviceId = operation.device_id;
+        if (!deviceId) {
+          const { devices } = await listDevices(client);
+          const activeDevices = devices.filter(
+            (device) => device.is_active && device.id,
+          );
+          deviceId =
+            activeDevices.find(
+              (device) =>
+                device.type === 'Computer' && !/web player/i.test(device.name),
+            )?.id ??
+            activeDevices[0]?.id ??
+            undefined;
+        }
+        const targetedOperation = { ...operation, device_id: deviceId };
         await apiPlay(client, {
-          device_id: operation.device_id,
+          device_id: deviceId,
           context_uri: operation.context_uri,
           uris: operation.uris,
           offset: normalizedOffset.value,
           position_ms: operation.position_ms,
         });
-        return { index, action: 'play', ...(await verifyPlayback(client, operation)) };
+        return {
+          index,
+          action: 'play',
+          device_id: deviceId,
+          ...(await verifyPlayback(client, targetedOperation)),
+        };
       }
       case 'pause': {
         await apiPause(client, { device_id: operation.device_id });

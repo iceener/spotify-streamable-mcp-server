@@ -579,6 +579,61 @@ describe('HTTP security and opaque Spotify authorization', () => {
 });
 
 describe('mocked Spotify provider behavior', () => {
+  for (const mode of ['modern', 'legacy'] as const) {
+    test(`${mode} client receives an MCP error for 204 play followed by paused playback`, async () => {
+      const baseMock = spotifyMock([]);
+      const mock: typeof fetch = Object.assign(
+        async (input: string | URL | Request, init?: RequestInit) => {
+          const url = new URL(input instanceof Request ? input.url : input);
+          if (url.pathname.endsWith('/me/player') && init?.method === 'GET') {
+            return Response.json({
+              is_playing: false,
+              item: { uri: 'spotify:track:pretoria', name: 'Pretoria' },
+              device: { id: 'desktop-device' },
+            });
+          }
+          return baseMock(input, init);
+        },
+        { preconnect: originalFetch.preconnect },
+      );
+      const scopes = ['user-read-playback-state', 'user-modify-playback-state'];
+      const store = memoryStore();
+      await storeAlias(store, 'mcp-play-token', 'spotify-play-token', scopes);
+      const runtime = createRuntime({
+        config: testConfig({
+          AUTH_STRATEGY: 'oauth',
+          AUTH_ENABLED: 'true',
+          AUTH_DISCOVERY_URL: 'http://localhost:4000',
+          OAUTH_SCOPES: scopes.join(' '),
+        }),
+        store,
+        spotifyFetch: mock,
+      });
+      const { client } = await connect(runtime, mode, 'mcp-play-token');
+      const result = await client.callTool({
+        name: 'spotify_control',
+        arguments: {
+          operations: [
+            {
+              action: 'play',
+              device_id: 'desktop-device',
+              uris: ['spotify:track:pretoria'],
+            },
+          ],
+        },
+      });
+      expect(result.isError).toBe(true);
+      expect(result.structuredContent).toMatchObject({
+        results: [{ index: 0, action: 'play', ok: false, code: 'bad_response' }],
+        summary: { ok: 0, failed: 1 },
+      });
+      expect(JSON.stringify(result.structuredContent)).toContain('Playback is paused');
+      expect(JSON.stringify(result.structuredContent)).not.toContain(
+        'Successful: play',
+      );
+    });
+  }
+
   test('keeps catalog client-credentials behavior and structured output', async () => {
     const observed: string[] = [];
     const mock = spotifyMock(observed);
