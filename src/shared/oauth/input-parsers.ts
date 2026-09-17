@@ -114,7 +114,7 @@ export function buildFlowOptions(
   tokenEndpointPath: string;
 } {
   return {
-    baseUrl: url.origin,
+    baseUrl: config.AUTH_DISCOVERY_URL || url.origin,
     isDev: config.NODE_ENV === 'development',
     callbackPath: overrides.callbackPath ?? '/oauth/callback',
     tokenEndpointPath: overrides.tokenEndpointPath ?? '/api/token',
