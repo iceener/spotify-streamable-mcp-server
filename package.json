@@ -1,58 +1,41 @@
 {
   "name": "mcp-spotify",
-  "version": "1.0.0",
-  "description": "Spotify MCP 2026-07-28 server for Bun and Cloudflare Workers",
-  "main": "dist/index.js",
+  "private": true,
+  "description": "Spotify MCP server for Bun and Cloudflare Workers, with an OAuth proxy in front of Spotify",
+  "license": "MIT",
   "type": "module",
+  "packageManager": "bun@1.4.0",
+  "engines": {
+    "bun": ">=1.4.0",
+    "node": ">=22.18.0"
+  },
   "scripts": {
-    "dev": "bun --watch src/index.ts",
-    "dev:worker": "wrangler dev",
-    "start": "bun run src/index.ts",
-    "build": "bun build src/index.ts --outdir dist --target bun",
-    "build:worker": "wrangler deploy --dry-run --outdir dist/worker",
-    "deploy": "wrangler deploy",
-    "deploy:tail": "wrangler tail",
-    "kv:create": "wrangler kv namespace create TOKENS",
-    "kv:create:preview": "wrangler kv namespace create TOKENS --preview",
+    "dev": "bun --watch src/bun.ts",
+    "dev:worker": "CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV=false wrangler dev",
+    "start": "bun src/bun.ts",
+    "deploy": "wrangler deploy --config wrangler.production.jsonc",
+    "check": "bun run typecheck && bun run lint && bun test && bun run types:worker:check",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.worker.json",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "format": "biome format --write .",
-    "format:check": "biome format .",
-    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.worker.json",
-    "types:worker": "wrangler types",
-    "types:worker:check": "wrangler types --check",
     "test": "bun test",
-    "test:protocol": "bun test tests/protocol.test.ts",
-    "test:workerd-client": "bun run tests/workerd-client.ts",
-    "test:workerd": "bun run tests/workerd-smoke.ts"
+    "test:smoke": "bun scripts/smoke-bun.ts && node --disable-warning=ExperimentalWarning scripts/smoke-worker.ts",
+    "types:worker": "CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV=false WRANGLER_HIDE_BANNER=true wrangler types --strict-vars=false",
+    "types:worker:check": "CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV=false WRANGLER_HIDE_BANNER=true wrangler types --strict-vars=false --check",
+    "inspector": "npx -y @modelcontextprotocol/inspector@2.8.0"
   },
-  "keywords": [
-    "mcp",
-    "spotify",
-    "model-context-protocol",
-    "streamable-http",
-    "oauth2",
-    "music"
-  ],
-  "author": "",
-  "license": "MIT",
   "dependencies": {
-    "@modelcontextprotocol/server": "2.0.0-beta.5",
-    "@spotify/web-api-ts-sdk": "^1.2.0",
-    "hono": "^4.11.7",
-    "zod": "^4.4.3"
+    "@modelcontextprotocol/server": "2.3.0",
+    "@spotify/web-api-ts-sdk": "1.2.0",
+    "hono": "4.13.9",
+    "jose": "6.2.12",
+    "zod": "4.6.5"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.3.14",
-    "@cloudflare/workers-types": "^5.20260727.1",
-    "@modelcontextprotocol/client": "2.0.0-beta.5",
-    "@types/node": "^24.10.0",
-    "bun-types": "latest",
-    "typescript": "^5.9.3",
-    "wrangler": "^4.114.0"
-  },
-  "engines": {
-    "bun": ">=1.2.0",
-    "node": ">=20.0.0"
+    "@biomejs/biome": "2.5.14",
+    "@modelcontextprotocol/client": "2.3.0",
+    "@types/bun": "1.4.2",
+    "typescript": "7.0.2",
+    "wrangler": "4.142.0"
   }
 }

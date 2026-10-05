@@ -1,15 +1,4 @@
-/**
- * Spotify MCP resources registration.
- * Add resources here if needed.
- */
+import type { Definition } from '../platform/primitives';
 
-import type { McpServer } from '@modelcontextprotocol/server';
-
-/**
- * Register resources with the MCP server.
- * Currently no resources are registered for Spotify MCP.
- */
-export function registerResources(_server: McpServer): void {
-  // No resources registered yet
-  // Add Spotify-specific resources here if needed
-}
+/** Every resource and resource template. The server has none; add yours here. */
+export const resources: Definition[] = [];

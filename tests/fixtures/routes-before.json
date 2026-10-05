@@ -1,0 +1,982 @@
+{
+  "_note": "Recorded from the checkpoint (commit 213a57b): dry-run production bundle (wrangler.production.jsonc) in local workerd (Miniflare 4), the deployed vars from version 37, Host spotify-mcp.example.workers.dev, every outbound request intercepted. Paths are recorded without their query. Host names are replaced with the stand-ins of wrangler.production.example.jsonc.",
+  "matrix": [
+    {
+      "label": "discovery",
+      "method": "GET",
+      "path": "/.well-known/oauth-protected-resource/mcp",
+      "status": 200,
+      "contentType": "application/json",
+      "allowOrigin": "*",
+      "cacheControl": null
+    },
+    {
+      "label": "discovery, foreign origin",
+      "method": "GET",
+      "path": "/.well-known/oauth-protected-resource/mcp",
+      "status": 200,
+      "contentType": "application/json",
+      "allowOrigin": "*",
+      "cacheControl": null
+    },
+    {
+      "label": "discovery, claude.ai origin",
+      "method": "GET",
+      "path": "/.well-known/oauth-protected-resource/mcp",
+      "status": 200,
+      "contentType": "application/json",
+      "allowOrigin": "*",
+      "cacheControl": null
+    },
+    {
+      "label": "discovery",
+      "method": "HEAD",
+      "path": "/.well-known/oauth-protected-resource/mcp",
+      "status": 200,
+      "contentType": "application/json",
+      "allowOrigin": "*",
+      "cacheControl": null
+    },
+    {
+      "label": "discovery preflight",
+      "method": "OPTIONS",
+      "path": "/.well-known/oauth-protected-resource/mcp",
+      "status": 204,
+      "contentType": null,
+      "allowOrigin": "*",
+      "cacheControl": null
+    },
+    {
+      "label": "discovery",
+      "method": "POST",
+      "path": "/.well-known/oauth-protected-resource/mcp",
+      "status": 405,
+      "contentType": "application/json",
+      "allowOrigin": "*",
+      "cacheControl": null,
+      "error": "method_not_allowed"
+    },
+    {
+      "label": "discovery",
+      "method": "GET",
+      "path": "/.well-known/oauth-authorization-server",
+      "status": 200,
+      "contentType": "application/json",
+      "allowOrigin": "*",
+      "cacheControl": null
+    },
+    {
+      "label": "discovery, foreign origin",
+      "method": "GET",
+      "path": "/.well-known/oauth-authorization-server",
+      "status": 200,
+      "contentType": "application/json",
+      "allowOrigin": "*",
+      "cacheControl": null
+    },
+    {
+      "label": "discovery, claude.ai origin",
+      "method": "GET",
+      "path": "/.well-known/oauth-authorization-server",
+      "status": 200,
+      "contentType": "application/json",
+      "allowOrigin": "*",
+      "cacheControl": null
+    },
+    {
+      "label": "discovery",
+      "method": "HEAD",
+      "path": "/.well-known/oauth-authorization-server",
+      "status": 200,
+      "contentType": "application/json",
+      "allowOrigin": "*",
+      "cacheControl": null
+    },
+    {
+      "label": "discovery preflight",
+      "method": "OPTIONS",
+      "path": "/.well-known/oauth-authorization-server",
+      "status": 204,
+      "contentType": null,
+      "allowOrigin": "*",
+      "cacheControl": null
+    },
+    {
+      "label": "discovery",
+      "method": "POST",
+      "path": "/.well-known/oauth-authorization-server",
+      "status": 405,
+      "contentType": "application/json",
+      "allowOrigin": "*",
+      "cacheControl": null,
+      "error": "method_not_allowed"
+    },
+    {
+      "label": "discovery",
+      "method": "GET",
+      "path": "/.well-known/oauth-protected-resource",
+      "status": 200,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": null
+    },
+    {
+      "label": "discovery, foreign origin",
+      "method": "GET",
+      "path": "/.well-known/oauth-protected-resource",
+      "status": 403,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": null,
+      "error": {
+        "code": -32000,
+        "message": "Invalid Origin: evil.example"
+      }
+    },
+    {
+      "label": "discovery, claude.ai origin",
+      "method": "GET",
+      "path": "/.well-known/oauth-protected-resource",
+      "status": 200,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": null
+    },
+    {
+      "label": "discovery",
+      "method": "HEAD",
+      "path": "/.well-known/oauth-protected-resource",
+      "status": 200,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": null
+    },
+    {
+      "label": "discovery preflight",
+      "method": "OPTIONS",
+      "path": "/.well-known/oauth-protected-resource",
+      "status": 404,
+      "contentType": "text/plain",
+      "allowOrigin": null,
+      "cacheControl": null
+    },
+    {
+      "label": "discovery",
+      "method": "POST",
+      "path": "/.well-known/oauth-protected-resource",
+      "status": 404,
+      "contentType": "text/plain",
+      "allowOrigin": null,
+      "cacheControl": null
+    },
+    {
+      "label": "discovery",
+      "method": "GET",
+      "path": "/mcp/.well-known/oauth-protected-resource",
+      "status": 200,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": null
+    },
+    {
+      "label": "discovery, foreign origin",
+      "method": "GET",
+      "path": "/mcp/.well-known/oauth-protected-resource",
+      "status": 403,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": null,
+      "error": {
+        "code": -32000,
+        "message": "Invalid Origin: evil.example"
+      }
+    },
+    {
+      "label": "discovery, claude.ai origin",
+      "method": "GET",
+      "path": "/mcp/.well-known/oauth-protected-resource",
+      "status": 200,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": null
+    },
+    {
+      "label": "discovery",
+      "method": "HEAD",
+      "path": "/mcp/.well-known/oauth-protected-resource",
+      "status": 200,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": null
+    },
+    {
+      "label": "discovery preflight",
+      "method": "OPTIONS",
+      "path": "/mcp/.well-known/oauth-protected-resource",
+      "status": 404,
+      "contentType": "text/plain",
+      "allowOrigin": null,
+      "cacheControl": null
+    },
+    {
+      "label": "discovery",
+      "method": "POST",
+      "path": "/mcp/.well-known/oauth-protected-resource",
+      "status": 404,
+      "contentType": "text/plain",
+      "allowOrigin": null,
+      "cacheControl": null
+    },
+    {
+      "label": "discovery",
+      "method": "GET",
+      "path": "/mcp/.well-known/oauth-authorization-server",
+      "status": 200,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": null
+    },
+    {
+      "label": "discovery, foreign origin",
+      "method": "GET",
+      "path": "/mcp/.well-known/oauth-authorization-server",
+      "status": 403,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": null,
+      "error": {
+        "code": -32000,
+        "message": "Invalid Origin: evil.example"
+      }
+    },
+    {
+      "label": "discovery, claude.ai origin",
+      "method": "GET",
+      "path": "/mcp/.well-known/oauth-authorization-server",
+      "status": 200,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": null
+    },
+    {
+      "label": "discovery",
+      "method": "HEAD",
+      "path": "/mcp/.well-known/oauth-authorization-server",
+      "status": 200,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": null
+    },
+    {
+      "label": "discovery preflight",
+      "method": "OPTIONS",
+      "path": "/mcp/.well-known/oauth-authorization-server",
+      "status": 404,
+      "contentType": "text/plain",
+      "allowOrigin": null,
+      "cacheControl": null
+    },
+    {
+      "label": "discovery",
+      "method": "POST",
+      "path": "/mcp/.well-known/oauth-authorization-server",
+      "status": 404,
+      "contentType": "text/plain",
+      "allowOrigin": null,
+      "cacheControl": null
+    },
+    {
+      "label": "not served",
+      "method": "GET",
+      "path": "/.well-known/openid-configuration",
+      "status": 404,
+      "contentType": "text/plain",
+      "allowOrigin": null,
+      "cacheControl": null
+    },
+    {
+      "label": "not served",
+      "method": "GET",
+      "path": "/.well-known/oauth-protected-resource/other",
+      "status": 404,
+      "contentType": "text/plain",
+      "allowOrigin": null,
+      "cacheControl": null
+    },
+    {
+      "label": "health",
+      "method": "GET",
+      "path": "/health",
+      "status": 200,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": null
+    },
+    {
+      "label": "icon",
+      "method": "GET",
+      "path": "/icon.svg",
+      "status": 404,
+      "contentType": "text/plain",
+      "allowOrigin": null,
+      "cacheControl": null
+    },
+    {
+      "label": "unknown",
+      "method": "GET",
+      "path": "/nope",
+      "status": 404,
+      "contentType": "text/plain",
+      "allowOrigin": null,
+      "cacheControl": null
+    },
+    {
+      "label": "unknown",
+      "method": "POST",
+      "path": "/nope",
+      "status": 404,
+      "contentType": "text/plain",
+      "allowOrigin": null,
+      "cacheControl": null
+    },
+    {
+      "label": "mcp, anonymous",
+      "method": "POST",
+      "path": "/mcp",
+      "status": 401,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": null,
+      "wwwAuthenticate": "Bearer error=\"invalid_token\", error_description=\"Missing Authorization header\", resource_metadata=\"https://spotify-mcp.example.workers.dev/.well-known/oauth-protected-resource/mcp\"",
+      "error": "invalid_token"
+    },
+    {
+      "label": "mcp, anonymous",
+      "method": "GET",
+      "path": "/mcp",
+      "status": 401,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": null,
+      "wwwAuthenticate": "Bearer error=\"invalid_token\", error_description=\"Missing Authorization header\", resource_metadata=\"https://spotify-mcp.example.workers.dev/.well-known/oauth-protected-resource/mcp\"",
+      "error": "invalid_token"
+    },
+    {
+      "label": "mcp, unknown token",
+      "method": "POST",
+      "path": "/mcp",
+      "status": 401,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": null,
+      "wwwAuthenticate": "Bearer error=\"invalid_token\", error_description=\"Unknown access token\", resource_metadata=\"https://spotify-mcp.example.workers.dev/.well-known/oauth-protected-resource/mcp\"",
+      "error": "invalid_token"
+    },
+    {
+      "label": "mcp, foreign origin",
+      "method": "POST",
+      "path": "/mcp",
+      "status": 403,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": null,
+      "error": {
+        "code": -32000,
+        "message": "Invalid Origin: evil.example"
+      }
+    },
+    {
+      "label": "mcp, anonymous, claude.ai origin",
+      "method": "POST",
+      "path": "/mcp",
+      "status": 401,
+      "contentType": "application/json",
+      "allowOrigin": "https://claude.ai",
+      "cacheControl": null,
+      "wwwAuthenticate": "Bearer error=\"invalid_token\", error_description=\"Missing Authorization header\", resource_metadata=\"https://spotify-mcp.example.workers.dev/.well-known/oauth-protected-resource/mcp\"",
+      "error": "invalid_token"
+    },
+    {
+      "label": "mcp preflight, claude.ai",
+      "method": "OPTIONS",
+      "path": "/mcp",
+      "status": 204,
+      "contentType": null,
+      "allowOrigin": "https://claude.ai",
+      "cacheControl": null
+    },
+    {
+      "label": "register, invalid",
+      "method": "POST",
+      "path": "/register",
+      "status": 400,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": "no-store",
+      "error": "invalid_client_metadata"
+    },
+    {
+      "label": "register",
+      "method": "GET",
+      "path": "/register",
+      "status": 404,
+      "contentType": "text/plain",
+      "allowOrigin": null,
+      "cacheControl": "no-store"
+    },
+    {
+      "label": "register, foreign origin",
+      "method": "POST",
+      "path": "/register",
+      "status": 403,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": null,
+      "error": {
+        "code": -32000,
+        "message": "Invalid Origin: evil.example"
+      }
+    },
+    {
+      "label": "register, web, claude.ai origin",
+      "method": "POST",
+      "path": "/register",
+      "status": 201,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": "no-store"
+    },
+    {
+      "label": "register, web, unlisted redirect",
+      "method": "POST",
+      "path": "/register",
+      "status": 400,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": "no-store",
+      "error": "invalid_redirect_uri"
+    },
+    {
+      "label": "register, web, origin entry (https://example.org/any/path)",
+      "method": "POST",
+      "path": "/register",
+      "status": 201,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": "no-store"
+    },
+    {
+      "label": "register, web, wonderlands exact",
+      "method": "POST",
+      "path": "/register",
+      "status": 201,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": "no-store"
+    },
+    {
+      "label": "register, web, alice://",
+      "method": "POST",
+      "path": "/register",
+      "status": 201,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": "no-store"
+    },
+    {
+      "label": "register, web, http://127.0.0.1:3000 entry",
+      "method": "POST",
+      "path": "/register",
+      "status": 400,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": "no-store",
+      "error": "invalid_redirect_uri"
+    },
+    {
+      "label": "register, web, http://127.0.0.1:* entry",
+      "method": "POST",
+      "path": "/register",
+      "status": 400,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": "no-store",
+      "error": "invalid_redirect_uri"
+    },
+    {
+      "label": "register, native, localhost",
+      "method": "POST",
+      "path": "/register",
+      "status": 400,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": "no-store",
+      "error": "invalid_redirect_uri"
+    },
+    {
+      "label": "register preflight, claude.ai",
+      "method": "OPTIONS",
+      "path": "/register",
+      "status": 404,
+      "contentType": "text/plain",
+      "allowOrigin": null,
+      "cacheControl": "no-store"
+    },
+    {
+      "label": "register, native",
+      "method": "POST",
+      "path": "/register",
+      "status": 201,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": "no-store"
+    },
+    {
+      "label": "authorize, no parameters",
+      "method": "GET",
+      "path": "/authorize",
+      "status": 400,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": "no-store",
+      "error": "unsupported_response_type"
+    },
+    {
+      "label": "authorize, plain PKCE",
+      "method": "GET",
+      "path": "/authorize",
+      "status": 400,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": "no-store",
+      "error": "invalid_request"
+    },
+    {
+      "label": "authorize, other resource",
+      "method": "GET",
+      "path": "/authorize",
+      "status": 400,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": "no-store",
+      "error": "invalid_target"
+    },
+    {
+      "label": "authorize, other loopback port",
+      "method": "GET",
+      "path": "/authorize",
+      "status": 302,
+      "contentType": null,
+      "allowOrigin": null,
+      "cacheControl": "no-store",
+      "location": "https://accounts.spotify.com/authorize"
+    },
+    {
+      "label": "authorize, foreign origin",
+      "method": "GET",
+      "path": "/authorize",
+      "status": 403,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": null,
+      "error": {
+        "code": -32000,
+        "message": "Invalid Origin: evil.example"
+      }
+    },
+    {
+      "label": "authorize",
+      "method": "GET",
+      "path": "/authorize",
+      "status": 302,
+      "contentType": null,
+      "allowOrigin": null,
+      "cacheControl": "no-store",
+      "location": "https://accounts.spotify.com/authorize"
+    },
+    {
+      "label": "provider callback, no parameters",
+      "method": "GET",
+      "path": "/oauth/callback",
+      "status": 400,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": "no-store",
+      "error": "invalid_callback"
+    },
+    {
+      "label": "provider callback, provider error",
+      "method": "GET",
+      "path": "/oauth/callback",
+      "status": 400,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": "no-store",
+      "error": "invalid_callback"
+    },
+    {
+      "label": "provider callback, unknown state",
+      "method": "GET",
+      "path": "/oauth/callback",
+      "status": 400,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": "no-store",
+      "error": "invalid_grant"
+    },
+    {
+      "label": "provider callback",
+      "method": "GET",
+      "path": "/oauth/callback",
+      "status": 302,
+      "contentType": null,
+      "allowOrigin": null,
+      "cacheControl": "no-store",
+      "location": "http://127.0.0.1:43210/oauth/callback"
+    },
+    {
+      "label": "provider callback, replay",
+      "method": "GET",
+      "path": "/oauth/callback",
+      "status": 400,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": "no-store",
+      "error": "invalid_grant"
+    },
+    {
+      "label": "token, empty",
+      "method": "POST",
+      "path": "/token",
+      "status": 400,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": "no-store",
+      "error": "unsupported_grant_type"
+    },
+    {
+      "label": "token",
+      "method": "GET",
+      "path": "/token",
+      "status": 404,
+      "contentType": "text/plain",
+      "allowOrigin": null,
+      "cacheControl": "no-store"
+    },
+    {
+      "label": "token preflight, claude.ai",
+      "method": "OPTIONS",
+      "path": "/token",
+      "status": 404,
+      "contentType": "text/plain",
+      "allowOrigin": null,
+      "cacheControl": "no-store"
+    },
+    {
+      "label": "token, foreign origin",
+      "method": "POST",
+      "path": "/token",
+      "status": 403,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": null,
+      "error": {
+        "code": -32000,
+        "message": "Invalid Origin: evil.example"
+      }
+    },
+    {
+      "label": "token, unsupported grant",
+      "method": "POST",
+      "path": "/token",
+      "status": 400,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": "no-store",
+      "error": "unsupported_grant_type"
+    },
+    {
+      "label": "token, refresh, missing token",
+      "method": "POST",
+      "path": "/token",
+      "status": 400,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": "no-store",
+      "error": "missing_refresh_token"
+    },
+    {
+      "label": "token, refresh, unknown token",
+      "method": "POST",
+      "path": "/token",
+      "status": 400,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": "no-store",
+      "error": "invalid_grant"
+    },
+    {
+      "label": "token, wrong verifier",
+      "method": "POST",
+      "path": "/token",
+      "status": 400,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": "no-store",
+      "error": "invalid_grant"
+    },
+    {
+      "label": "token, authorization code",
+      "method": "POST",
+      "path": "/token",
+      "status": 200,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": "no-store"
+    },
+    {
+      "label": "token, code replay",
+      "method": "POST",
+      "path": "/token",
+      "status": 400,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": "no-store",
+      "error": "invalid_grant"
+    },
+    {
+      "label": "token, refresh, wrong client",
+      "method": "POST",
+      "path": "/token",
+      "status": 200,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": "no-store"
+    },
+    {
+      "label": "token, refresh, no client_id",
+      "method": "POST",
+      "path": "/token",
+      "status": 200,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": "no-store"
+    },
+    {
+      "label": "token, refresh",
+      "method": "POST",
+      "path": "/token",
+      "status": 200,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": "no-store"
+    },
+    {
+      "label": "token, refresh, claude.ai origin",
+      "method": "POST",
+      "path": "/token",
+      "status": 200,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": "no-store"
+    },
+    {
+      "label": "revoke",
+      "method": "POST",
+      "path": "/revoke",
+      "status": 200,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": "no-store"
+    },
+    {
+      "label": "revoke",
+      "method": "GET",
+      "path": "/revoke",
+      "status": 404,
+      "contentType": "text/plain",
+      "allowOrigin": null,
+      "cacheControl": "no-store"
+    },
+    {
+      "label": "mcp, issued token, 2025 initialize",
+      "method": "POST",
+      "path": "/mcp",
+      "status": 200,
+      "contentType": "text/event-stream",
+      "allowOrigin": null,
+      "cacheControl": "no-cache, no-transform"
+    },
+    {
+      "label": "mcp, issued token",
+      "method": "GET",
+      "path": "/mcp",
+      "status": 405,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": null,
+      "error": {
+        "code": -32000,
+        "message": "Method not allowed."
+      }
+    },
+    {
+      "label": "mcp, issued token",
+      "method": "DELETE",
+      "path": "/mcp",
+      "status": 405,
+      "contentType": "application/json",
+      "allowOrigin": null,
+      "cacheControl": null,
+      "error": {
+        "code": -32000,
+        "message": "Method not allowed."
+      }
+    }
+  ],
+  "documents": {
+    "/.well-known/oauth-protected-resource/mcp": {
+      "resource": "https://spotify-mcp.example.workers.dev/mcp",
+      "authorization_servers": ["https://spotify-mcp.example.workers.dev"],
+      "scopes_supported": [
+        "playlist-read-private",
+        "playlist-read-collaborative",
+        "playlist-modify-public",
+        "playlist-modify-private",
+        "user-read-playback-state",
+        "user-modify-playback-state",
+        "user-read-currently-playing",
+        "user-library-read",
+        "user-library-modify"
+      ],
+      "resource_name": "Spotify Music"
+    },
+    "/.well-known/oauth-authorization-server": {
+      "issuer": "https://spotify-mcp.example.workers.dev",
+      "authorization_endpoint": "https://spotify-mcp.example.workers.dev/authorize",
+      "token_endpoint": "https://spotify-mcp.example.workers.dev/token",
+      "revocation_endpoint": "https://spotify-mcp.example.workers.dev/revoke",
+      "registration_endpoint": "https://spotify-mcp.example.workers.dev/register",
+      "response_types_supported": ["code"],
+      "grant_types_supported": ["authorization_code", "refresh_token"],
+      "code_challenge_methods_supported": ["S256"],
+      "token_endpoint_auth_methods_supported": ["none"],
+      "scopes_supported": [
+        "playlist-read-private",
+        "playlist-read-collaborative",
+        "playlist-modify-public",
+        "playlist-modify-private",
+        "user-read-playback-state",
+        "user-modify-playback-state",
+        "user-read-currently-playing",
+        "user-library-read",
+        "user-library-modify"
+      ]
+    },
+    "/.well-known/oauth-protected-resource": {
+      "resource": "https://spotify-mcp.example.workers.dev/mcp",
+      "authorization_servers": ["https://spotify-mcp.example.workers.dev"],
+      "scopes_supported": [
+        "playlist-read-private",
+        "playlist-read-collaborative",
+        "playlist-modify-public",
+        "playlist-modify-private",
+        "user-read-playback-state",
+        "user-modify-playback-state",
+        "user-read-currently-playing",
+        "user-library-read",
+        "user-library-modify"
+      ],
+      "resource_name": "Spotify Music"
+    },
+    "/mcp/.well-known/oauth-protected-resource": {
+      "resource": "https://spotify-mcp.example.workers.dev/mcp",
+      "authorization_servers": ["https://spotify-mcp.example.workers.dev"],
+      "scopes_supported": [
+        "playlist-read-private",
+        "playlist-read-collaborative",
+        "playlist-modify-public",
+        "playlist-modify-private",
+        "user-read-playback-state",
+        "user-modify-playback-state",
+        "user-read-currently-playing",
+        "user-library-read",
+        "user-library-modify"
+      ],
+      "resource_name": "Spotify Music"
+    },
+    "/mcp/.well-known/oauth-authorization-server": {
+      "issuer": "https://spotify-mcp.example.workers.dev",
+      "authorization_endpoint": "https://spotify-mcp.example.workers.dev/authorize",
+      "token_endpoint": "https://spotify-mcp.example.workers.dev/token",
+      "revocation_endpoint": "https://spotify-mcp.example.workers.dev/revoke",
+      "registration_endpoint": "https://spotify-mcp.example.workers.dev/register",
+      "response_types_supported": ["code"],
+      "grant_types_supported": ["authorization_code", "refresh_token"],
+      "code_challenge_methods_supported": ["S256"],
+      "token_endpoint_auth_methods_supported": ["none"],
+      "scopes_supported": [
+        "playlist-read-private",
+        "playlist-read-collaborative",
+        "playlist-modify-public",
+        "playlist-modify-private",
+        "user-read-playback-state",
+        "user-modify-playback-state",
+        "user-read-currently-playing",
+        "user-library-read",
+        "user-library-modify"
+      ]
+    }
+  },
+  "registrationShape": [
+    "application_type",
+    "client_id",
+    "client_id_issued_at",
+    "client_name",
+    "grant_types",
+    "redirect_uris",
+    "response_types",
+    "token_endpoint_auth_method"
+  ],
+  "spotifyAuthorize": {
+    "url": "https://accounts.spotify.com/authorize",
+    "query": {
+      "response_type": "code",
+      "client_id": "mock-spotify-client",
+      "redirect_uri": "https://spotify-mcp.example.workers.dev/oauth/callback",
+      "state": "<handle>",
+      "scope": "playlist-read-private playlist-read-collaborative playlist-modify-public playlist-modify-private user-read-playback-state user-modify-playback-state user-read-currently-playing user-library-read user-library-modify"
+    }
+  },
+  "clientCallback": {
+    "url": "http://127.0.0.1:43210/oauth/callback",
+    "queryKeys": ["code", "state"],
+    "stateKept": true
+  },
+  "tokenResponse": {
+    "access_token": "<opaque>",
+    "refresh_token": "<opaque>",
+    "token_type": "bearer",
+    "expires_in": 3600,
+    "scope": "playlist-read-private playlist-read-collaborative playlist-modify-public playlist-modify-private user-read-playback-state user-modify-playback-state user-read-currently-playing user-library-read user-library-modify"
+  },
+  "refreshResponse": {
+    "access_token": "<opaque>",
+    "refresh_token": "<opaque>",
+    "token_type": "bearer",
+    "expires_in": 3599,
+    "scope": "playlist-read-private playlist-read-collaborative playlist-modify-public playlist-modify-private user-read-playback-state user-modify-playback-state user-read-currently-playing user-library-read user-library-modify"
+  },
+  "outbound": [
+    "POST https://accounts.spotify.com/api/token",
+    "GET https://api.spotify.com/v1/me/player",
+    "GET https://api.spotify.com/v1/me/player/devices",
+    "GET https://api.spotify.com/v1/me/player/currently-playing",
+    "POST https://accounts.spotify.com/api/token",
+    "GET https://api.spotify.com/v1/search",
+    "GET https://api.spotify.com/v1/me/player",
+    "GET https://api.spotify.com/v1/me/player/devices",
+    "GET https://api.spotify.com/v1/me/player/currently-playing",
+    "GET https://api.spotify.com/v1/search"
+  ]
+}

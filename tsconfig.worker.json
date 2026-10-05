@@ -1,9 +1,8 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "lib": ["ES2022"],
     "types": ["./worker-configuration.d.ts"]
   },
-  "include": ["src/**/*.ts", "worker-configuration.d.ts"],
-  "exclude": ["node_modules", "dist", "src/index.ts", "**/*.test.ts"]
+  "include": ["src", "worker-configuration.d.ts"],
+  "exclude": ["src/bun.ts", "src/oauth/authority-file.ts", "src/oauth/token-store-file.ts"]
 }

@@ -1,0 +1,59 @@
+// Production configuration for spotify-mcp: `bun run deploy` uses it.
+// This file is gitignored. It names the deployed Worker, its account, its storage IDs and
+// the allowlists. wrangler.production.example.jsonc has the same shape with stand-in
+// values; keep the two in step (tests/production.test.ts checks the shape).
+// Secrets (wrangler secret put NAME --config wrangler.production.jsonc): SPOTIFY_CLIENT_ID,
+// SPOTIFY_CLIENT_SECRET, RS_TOKENS_ENC_KEY, and TOKENS_ENC_KEY (unused while
+// RS_TOKENS_ENC_KEY is set).
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "spotify-mcp",
+  "account_id": "<your-account-id>",
+  "workers_dev": true,
+  "vars": {
+    "NODE_ENV": "production",
+    "MCP_PUBLIC_URL": "https://spotify-mcp.example.workers.dev/mcp",
+    "MCP_ALLOWED_HOSTS": "spotify-mcp.example.workers.dev",
+    "MCP_ALLOWED_ORIGIN_HOSTNAMES": "spotify-mcp.example.workers.dev,claude.ai,claude.com,alice.example.org,ai.example.net,agi.example.net,example.org",
+    "MCP_LEGACY_MODE": "stateless",
+    "MCP_MAX_REQUEST_BYTES": "1048576",
+    "AUTH_MODE": "oauth",
+    "OAUTH_ISSUER_URL": "https://spotify-mcp.example.workers.dev",
+    "OAUTH_AUTHORIZATION_URL": "https://spotify-mcp.example.workers.dev/authorize",
+    "OAUTH_TOKEN_URL": "https://spotify-mcp.example.workers.dev/token",
+    "OAUTH_REGISTRATION_URL": "https://spotify-mcp.example.workers.dev/register",
+    "PROXY_REDIRECT_ALLOWLIST": "alice://oauth/callback,https://example.org,https://example.org/api/mcp/oauth/callback,https://example.org/v1/mcp/oauth/callback,https://agi.example.net/mcp/oauth/spotify/callback,https://agi.example.net/v1/mcp/oauth/callback,https://agi.example.net/api/mcp/oauth/callback,https://claude.ai/api/mcp/auth_callback,https://claude.com/api/mcp/auth_callback,https://ai.example.net/api/mcp/oauth/spotify/callback,https://ai.example.net/v1/mcp/oauth/callback,https://ai.example.net/api/mcp/oauth/callback,https://alice.example.org,https://alice.example.org/v1/mcp/oauth/callback,https://alice.example.org/api/mcp/oauth/callback,https://wonderlands.example.net/integration/oauth/callback,http://127.0.0.1:3000/v1/mcp/oauth/callback,http://127.0.0.1:*/oauth/callback",
+    "LOG_LEVEL": "info"
+  },
+  "kv_namespaces": [{ "binding": "TOKENS", "id": "<your-kv-namespace-id>" }],
+  "durable_objects": {
+    "bindings": [{ "name": "OAUTH_AUTHORITY", "class_name": "NativeOAuthAuthority" }]
+  },
+
+  // The same code and runtime as wrangler.jsonc.
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-09-08",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true,
+    "logs": { "enabled": true, "head_sampling_rate": 1 },
+    "traces": { "enabled": true, "head_sampling_rate": 0.1 }
+  },
+
+  // Applied in production, in this order. Only append: Cloudflare records which tags ran.
+  // v1 and v2 created and then deleted an earlier authority class; v3 is the one in use.
+  "migrations": [
+    {
+      "tag": "v1-oauth-authority",
+      "new_sqlite_classes": ["OAuthAuthorityDurableObject"]
+    },
+    {
+      "tag": "v2-remove-oauth-authority",
+      "deleted_classes": ["OAuthAuthorityDurableObject"]
+    },
+    {
+      "tag": "v3-native-oauth-authority",
+      "new_sqlite_classes": ["NativeOAuthAuthority"]
+    }
+  ]
+}

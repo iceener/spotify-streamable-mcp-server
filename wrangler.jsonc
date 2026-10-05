@@ -1,34 +1,43 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "spotify-mcp",
+  "name": "spotify-mcp-dev",
   "main": "src/worker.ts",
-  "compatibility_date": "2026-07-27",
+  "compatibility_date": "2026-09-08",
   "compatibility_flags": ["nodejs_compat"],
-  "workers_dev": true,
-  "vars": {
-    "MCP_NAME": "mcp-spotify",
-    "MCP_TITLE": "Spotify Music",
-    "MCP_VERSION": "1.0.0",
-    "MCP_LEGACY_MODE": "stateless",
-    "MCP_MAX_REQUEST_BYTES": "1048576",
-    "AUTH_ENABLED": "true",
-    "SPOTIFY_ACCOUNTS_URL": "https://accounts.spotify.com",
-    "SPOTIFY_API_URL": "https://api.spotify.com/v1",
-    "OAUTH_SCOPES": "playlist-read-private playlist-read-collaborative playlist-modify-public playlist-modify-private user-read-playback-state user-modify-playback-state user-read-currently-playing user-library-read user-library-modify",
-    "OAUTH_REDIRECT_ALLOW_ALL": "false",
-    "OAUTH_REDIRECT_ALLOWLIST": "alice://oauth/callback,https://overment.ai,https://overment.ai/api/mcp/oauth/callback,https://overment.ai/v1/mcp/oauth/callback,https://agi.overment.com/mcp/oauth/spotify/callback,https://agi.overment.com/v1/mcp/oauth/callback,https://agi.overment.com/api/mcp/oauth/callback,https://claude.ai/api/mcp/auth_callback,https://claude.com/api/mcp/auth_callback,https://ai.overment.com/api/mcp/oauth/spotify/callback,https://ai.overment.com/v1/mcp/oauth/callback,https://ai.overment.com/api/mcp/oauth/callback,https://alice.overment.ai,https://alice.overment.ai/v1/mcp/oauth/callback,https://alice.overment.ai/api/mcp/oauth/callback,http://127.0.0.1:3000/v1/mcp/oauth/callback",
-    "OAUTH_REDIRECT_URI": "https://alice.overment.ai/api/mcp/oauth/callback",
-    "NODE_ENV": "production",
-    "LOG_LEVEL": "info"
+  "dev": {
+    "ip": "127.0.0.1",
+    "port": 8787
   },
-  "kv_namespaces": [
-    {
-      "binding": "TOKENS",
-      "id": "e728cd6ee21c4c65901de43be847bb81"
-    }
-  ],
-  // Previous deploy on feat/modern-mcp-protocol created OAuthAuthorityDurableObject.
-  // Current MCP SDK v2 runtime no longer uses DOs — keep the applied tag and delete the class.
+  "observability": {
+    "enabled": true,
+    "logs": { "enabled": true, "head_sampling_rate": 1 },
+    "traces": { "enabled": true, "head_sampling_rate": 0.1 }
+  },
+
+  // `wrangler dev` uses these. They only work on loopback, so a Worker deployed with
+  // this file refuses every request instead of serving with development settings.
+  // Production uses wrangler.production.jsonc, which is gitignored; see
+  // wrangler.production.example.jsonc.
+  // To sign in with Spotify locally, put SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET and
+  // RS_TOKENS_ENC_KEY in .dev.vars, and add http://127.0.0.1:8787/oauth/callback to the
+  // Spotify app's redirect URIs.
+  "vars": {
+    "NODE_ENV": "development",
+    "MCP_PUBLIC_URL": "http://127.0.0.1:8787/mcp",
+    "AUTH_MODE": "oauth",
+    "OAUTH_ISSUER_URL": "http://127.0.0.1:8787",
+    "OAUTH_AUTHORIZATION_URL": "http://127.0.0.1:8787/authorize",
+    "OAUTH_TOKEN_URL": "http://127.0.0.1:8787/token",
+    "OAUTH_REGISTRATION_URL": "http://127.0.0.1:8787/register",
+    "PROXY_REDIRECT_ALLOWLIST": "alice://oauth/callback"
+  },
+  // A local namespace for `wrangler dev`; it never reaches Cloudflare.
+  "kv_namespaces": [{ "binding": "TOKENS", "id": "00000000000000000000000000000000" }],
+  "durable_objects": {
+    "bindings": [{ "name": "OAUTH_AUTHORITY", "class_name": "NativeOAuthAuthority" }]
+  },
+  // Applied in production, in this order. Only append: Cloudflare records which tags ran.
+  // v1 and v2 created and then deleted an earlier authority class; v3 is the one in use.
   "migrations": [
     {
       "tag": "v1-oauth-authority",
@@ -37,17 +46,10 @@
     {
       "tag": "v2-remove-oauth-authority",
       "deleted_classes": ["OAuthAuthorityDurableObject"]
-    }
-  ],
-  "observability": {
-    "enabled": true,
-    "logs": {
-      "enabled": true,
-      "head_sampling_rate": 1
     },
-    "traces": {
-      "enabled": true,
-      "head_sampling_rate": 0.1
+    {
+      "tag": "v3-native-oauth-authority",
+      "new_sqlite_classes": ["NativeOAuthAuthority"]
     }
-  }
+  ]
 }
