@@ -9,6 +9,13 @@ import * as z from 'zod/v4';
 // Slim entities used across outputs
 // ---------------------------------------------------------------------------
 
+/** Absent when Spotify has no image for the item. */
+const ImageUrlSchema = z
+  .string()
+  .url()
+  .optional()
+  .describe('Thumbnail URL, about 300 px wide. For a track, its album cover.');
+
 const SlimTrackSchema = z.object({
   type: z.literal('track'),
   id: z.string(),
@@ -18,6 +25,7 @@ const SlimTrackSchema = z.object({
   album: z.string().optional(),
   duration_ms: z.number().optional(),
   url: z.string().url().optional(),
+  image: ImageUrlSchema,
 });
 
 const SlimArtistSchema = z.object({
@@ -26,6 +34,7 @@ const SlimArtistSchema = z.object({
   uri: z.string().optional(),
   name: z.string(),
   url: z.string().url().optional(),
+  image: ImageUrlSchema,
 });
 
 const SlimAlbumSchema = z.object({
@@ -34,6 +43,7 @@ const SlimAlbumSchema = z.object({
   uri: z.string().optional(),
   name: z.string(),
   url: z.string().url().optional(),
+  image: ImageUrlSchema,
 });
 
 const SlimPlaylistSchema = z.object({
@@ -43,6 +53,7 @@ const SlimPlaylistSchema = z.object({
   name: z.string(),
   owner: z.string().optional(),
   url: z.string().url().optional(),
+  image: ImageUrlSchema,
 });
 
 const SlimDeviceSchema = z.object({

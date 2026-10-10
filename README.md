@@ -31,6 +31,8 @@ The tools do not copy Spotify's API one to one. Each tool takes a batch (`querie
 | `spotify_playlist` | Lists, reads, creates and changes playlists: `list_user`, `get`, `items`, `create`, `update_details`, `add_items`, `remove_items`, `reorder_items`. |
 | `spotify_library` | Lists, adds, removes and checks saved songs: `tracks_get`, `tracks_add`, `tracks_remove`, `tracks_contains`. |
 
+Tracks, albums, artists and playlists in the results carry `image`, a thumbnail URL about 300 px wide. For a track, it is the album cover.
+
 `spotify_control` reports a `play` or `transfer` as successful only after Spotify's player state confirms it. When `play` names no device, the tool prefers the active desktop app to a Web Player. For the details, refer to [docs/playback.md](docs/playback.md).
 
 A `device_id` is a long identifier from `player_status`, not a device name such as "MacBook Pro".

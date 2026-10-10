@@ -28,7 +28,7 @@ import { tools } from './tools';
 export const serverInfo = {
   name: 'mcp-spotify',
   title: 'Spotify Music',
-  version: '1.1.0',
+  version: '1.2.0',
   description: 'Search Spotify and manage playback, playlists, and saved songs.',
 };
 

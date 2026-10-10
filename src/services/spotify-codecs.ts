@@ -11,6 +11,8 @@ const ImageCodec = z.object({
   width: z.number().nullable().optional(),
   height: z.number().nullable().optional(),
 });
+type ImageCodecType = z.infer<typeof ImageCodec>;
+const ImagesCodec = z.array(ImageCodec).nullable().optional();
 
 // Track (subset)
 export const TrackCodec = z.object({
@@ -19,7 +21,10 @@ export const TrackCodec = z.object({
   name: z.string().nullable().optional(),
   linked_from: z.object({ uri: z.string().optional() }).nullable().optional(),
   artists: z.array(z.object({ name: z.string().nullable().optional() })).optional(),
-  album: z.object({ name: z.string().nullable().optional() }).nullable().optional(),
+  album: z
+    .object({ name: z.string().nullable().optional(), images: ImagesCodec })
+    .nullable()
+    .optional(),
   duration_ms: z.number().nullable().optional(),
   external_urls: z.object({ spotify: z.string().optional() }).optional(),
 });
@@ -31,6 +36,7 @@ export const MinimalEntityCodec = z.object({
   name: z.string().optional(),
   uri: z.string().optional(),
   external_urls: z.object({ spotify: z.string().optional() }).optional(),
+  images: ImagesCodec,
 });
 export type MinimalEntityCodecType = z.infer<typeof MinimalEntityCodec>;
 
@@ -80,7 +86,7 @@ export const PlaylistSimplifiedCodec = z.object({
   external_urls: z.object({ spotify: z.string().optional() }).optional(),
   public: z.boolean().nullable().optional(),
   owner: PlaylistOwnerCodec,
-  images: z.array(ImageCodec).nullable().optional(),
+  images: ImagesCodec,
   tracks: z.object({ total: z.number().nullable().optional() }).optional(),
 });
 export type PlaylistSimplifiedCodecType = z.infer<typeof PlaylistSimplifiedCodec>;
@@ -154,6 +160,7 @@ export function toSlimTrack(t: TrackCodecType) {
       : [],
     album: t.album?.name ?? undefined,
     duration_ms: t.duration_ms ?? undefined,
+    image: thumbnailUrl(t.album?.images),
   };
 }
 
@@ -197,6 +204,24 @@ function pickLargestImageUrl(
   return sorted[0]?.url || undefined;
 }
 
+/** Spotify sends covers at 640, 300 and 64 px, and artist pictures at 640, 320 and 160 px. */
+const THUMBNAIL_WIDTH = 300;
+
+/**
+ * A thumbnail: the smallest image at least 300 px wide, else the widest. Without widths (a
+ * playlist usually has one image of unknown size), the first, as Spotify lists the widest first.
+ */
+export function thumbnailUrl(images: ImageCodecType[] | null | undefined): string | undefined {
+  const width = (image: ImageCodecType) => image.width ?? 0;
+  const list = (images ?? []).filter((image) => image.url);
+  const wide = list.filter((image) => width(image) >= THUMBNAIL_WIDTH);
+  const [pick] =
+    wide.length > 0
+      ? wide.sort((a, b) => width(a) - width(b))
+      : list.sort((a, b) => width(b) - width(a));
+  return pick?.url;
+}
+
 export function toSlimAlbum(a: MinimalEntityCodecType) {
   return {
     type: 'album' as const,
@@ -204,6 +229,7 @@ export function toSlimAlbum(a: MinimalEntityCodecType) {
     name: String(a.name ?? ''),
     uri: a.uri ?? undefined,
     url: a.external_urls?.spotify ?? undefined,
+    image: thumbnailUrl(a.images),
   };
 }
 
@@ -214,6 +240,7 @@ export function toSlimArtist(a: MinimalEntityCodecType) {
     name: String(a.name ?? ''),
     uri: a.uri ?? undefined,
     url: a.external_urls?.spotify ?? undefined,
+    image: thumbnailUrl(a.images),
   };
 }
 
@@ -229,5 +256,6 @@ export function toSlimPlaylist(
     uri: p.uri ?? undefined,
     url: p.external_urls?.spotify ?? undefined,
     owner: p.owner?.display_name ?? undefined,
+    image: thumbnailUrl(p.images),
   };
 }

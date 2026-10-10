@@ -26,12 +26,21 @@ import {
 
 afterEach(cleanup);
 
+/** Images as Spotify sends them: a cover at 640, 300 and 64 px; an artist at 640, 320, 160. */
+const cover = (size: number) => `https://i.scdn.co/image/cover-${size}`;
+const COVER = [640, 300, 64].map((size) => ({ url: cover(size), width: size, height: size }));
+const PORTRAIT = [640, 320, 160].map((size) => ({
+  url: `https://i.scdn.co/image/artist-${size}`,
+  width: size,
+  height: size,
+}));
+
 const track1 = {
   id: 'track-1',
   uri: 'spotify:track:track-1',
   name: 'Migration Song',
   artists: [{ name: 'Artist' }],
-  album: { name: 'Album' },
+  album: { name: 'Album', images: COVER },
   duration_ms: 1000,
 };
 
@@ -77,6 +86,8 @@ function spotifyApi(observed: string[] = []): FetchRoute {
         return Response.json({ id: 'p1', name: 'Mix', uri: 'spotify:playlist:p1' });
       case 'GET /v1/me/tracks/contains':
         return Response.json([true]);
+      case 'GET /v1/me/tracks':
+        return Response.json({ items: [{ track: track1 }], limit: 20, offset: 0, total: 1 });
       case 'GET /v1/tracks':
         return Response.json({ tracks: [track1] });
     }
@@ -266,6 +277,23 @@ describe('player_status', () => {
     });
   });
 
+  test('the current track carries its album cover', async () => {
+    const api = spotifyApi();
+    const { client } = await spotifyCaller((request) =>
+      new URL(request.url).pathname === '/v1/me/player/currently-playing'
+        ? Response.json({ is_playing: true, item: track1 })
+        : api(request),
+    );
+    const result = await client.callTool({
+      name: 'player_status',
+      arguments: { include: ['current_track'] },
+    });
+    expect(result.isError).toBeFalsy();
+    expect(result.structuredContent).toMatchObject({
+      current_track: { id: 'track-1', album: 'Album', image: cover(300) },
+    });
+  });
+
   test('a Spotify 401 asks the user to sign in again', async () => {
     const { client } = await spotifyCaller(() => new Response('{}', { status: 401 }));
     const result = await client.callTool({ name: 'player_status', arguments: {} });
@@ -304,6 +332,47 @@ describe('search_catalog', () => {
       'Bearer spotify-app-token',
       'Bearer spotify-app-token',
     ]);
+  });
+
+  test('every result type carries a thumbnail when Spotify has one', async () => {
+    const api = spotifyApi();
+    const { client } = await spotifyCaller((request) =>
+      new URL(request.url).pathname === '/v1/search'
+        ? Response.json({
+            tracks: { total: 2, items: [track1, { ...track1, id: 'bare', album: { name: 'A' } }] },
+            albums: { total: 1, items: [{ id: 'al', name: 'Album', images: COVER }] },
+            artists: { total: 1, items: [{ id: 'ar', name: 'Artist', images: PORTRAIT }] },
+            playlists: {
+              total: 2,
+              items: [
+                {
+                  id: 'pl',
+                  name: 'Mix',
+                  owner: { display_name: 'Spotify' },
+                  images: [{ url: 'https://image-cdn-ak.spotifycdn.com/image/mix', width: null }],
+                },
+                null,
+              ],
+            },
+          })
+        : api(request),
+    );
+    const result = await client.callTool({
+      name: 'search_catalog',
+      arguments: { queries: ['q'], types: ['track', 'album', 'artist', 'playlist'] },
+    });
+    expect(result.isError).toBeFalsy();
+    const [batch] = (result.structuredContent as { batches: Array<{ items: unknown[] }> }).batches;
+    expect(batch?.items).toMatchObject([
+      { type: 'track', id: 'track-1', image: cover(300) },
+      { type: 'track', id: 'bare' },
+      { type: 'album', id: 'al', image: cover(300) },
+      { type: 'artist', id: 'ar', image: 'https://i.scdn.co/image/artist-320' },
+      { type: 'playlist', id: 'pl', image: 'https://image-cdn-ak.spotifycdn.com/image/mix' },
+    ]);
+    expect(batch?.items[1]).not.toHaveProperty('image');
+    // The text the model reads is unchanged: the URLs are in the structured result.
+    expect(textOf(result)).not.toContain('scdn');
   });
 
   test('a refused app token is told to the model', async () => {
@@ -353,6 +422,24 @@ describe('spotify_playlist and spotify_library', () => {
     expect(textOf(result)).toStartWith(
       "Loaded 2 items from 'Mix' (context: spotify:playlist:p1).\n- #10 Migration Song",
     );
+  });
+
+  test('playlist items and saved tracks carry their album covers', async () => {
+    const { client } = await spotifyCaller(spotifyApi());
+    const [playlist, library] = await Promise.all([
+      client.callTool({
+        name: 'spotify_playlist',
+        arguments: { action: 'items', playlist_id: 'p1' },
+      }),
+      client.callTool({ name: 'spotify_library', arguments: { action: 'tracks_get' } }),
+    ]);
+    expect(playlist.structuredContent).toMatchObject({
+      data: { items: [{ id: 'track-1', image: cover(300) }, { id: 'track-2' }] },
+    });
+    expect(library.structuredContent).toMatchObject({
+      ok: true,
+      data: { total: 1, items: [{ id: 'track-1', image: cover(300) }] },
+    });
   });
 
   test('missing arguments are refused before Spotify is called', async () => {

@@ -1,4 +1,5 @@
 import { defineTool } from '../platform/primitives';
+import { thumbnailUrl } from '../services/spotify-codecs';
 import {
   getCurrentlyPlaying,
   getPlayerState,
@@ -101,6 +102,7 @@ export const playerStatus = defineTool(
                 : [],
               album: track.album?.name ?? undefined,
               duration_ms: track.duration_ms ?? undefined,
+              image: thumbnailUrl(track.album?.images),
             }
           : null;
         if (typeof current?.is_playing === 'boolean') {

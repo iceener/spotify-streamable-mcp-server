@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
-import { MOCK_DEVICE } from './mock-spotify';
+import { MOCK_COVER, MOCK_DEVICE } from './mock-spotify';
 
 /**
  * Sign in through the OAuth proxy over real sockets, as a native client does: register,
@@ -140,11 +140,14 @@ export async function smoke(endpoint: URL, label: string, token?: string): Promi
           arguments: { queries: ['smoke'], types: ['track'] },
         });
         assert.equal(search.isError, undefined);
-        assert.equal(
-          (search.structuredContent as { batches: Array<{ items: Array<{ name: string }> }> })
-            .batches[0]?.items[0]?.name,
-          'Smoke Song',
-        );
+        const [found] =
+          (
+            search.structuredContent as {
+              batches: Array<{ items: Array<{ name: string; image?: string }> }>;
+            }
+          ).batches[0]?.items ?? [];
+        assert.equal(found?.name, 'Smoke Song');
+        assert.equal(found?.image, MOCK_COVER);
       } else {
         assert.equal(status.isError, true);
       }

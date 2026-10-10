@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.2.0 — 2026-10-10
+
+### Changed for clients
+
+- **Images:** tracks, albums, artists and playlists carry `image`, a thumbnail URL: the smallest image Spotify has that is at least 300 px wide (else the widest). For a track, it is the album cover. The field is absent when Spotify has no image. It is in:
+  - `search_catalog`: every result type;
+  - `player_status`: `current_track`;
+  - `spotify_playlist` `items` and `spotify_library` `tracks_get`: each track.
+- **Output schemas:** `search_catalog` and `player_status` list `image` on their slim entities. The other tools' output schemas are unchanged (`data` is untyped). `spotify_playlist` `list_user` and `get` keep `images`, the URL of the largest playlist image, as before.
+- The text the model reads is unchanged: the URLs are only in the structured result (and in the JSON text when `SPOTIFY_INCLUDE_JSON_IN_CONTENT` is `true`).
+- **Server identity:** version `1.2.0`.
+
+The output schemas forbid unknown fields, as before. A client that checks results against a tool list it fetched before this version rejects the new field until it lists the tools again.
+
 ## 1.1.0 — 2026-10-05
 
 The server now follows the [MCP server template](https://github.com/iceener/streamable-mcp-server-template) 2.1 and uses `@modelcontextprotocol/server` 2.3.0. The OAuth proxy is the provider-neutral `src/oauth/` that gmail-mcp uses. The tool contract, the stored tokens, the Spotify callback and the redirect allowlist are the same as before. `tests/fixtures/` records the deployed code (commit `213a57b`); `tests/contract.test.ts`, `tests/routes.test.ts` and `tests/oauth/storage.test.ts` compare the server with it.

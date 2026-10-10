@@ -49,6 +49,28 @@ function newNullableSpelling(schema: unknown): unknown {
   return node;
 }
 
+/** Added in 1.2.0: a thumbnail URL on every track, album, artist and playlist result. */
+const IMAGE = {
+  description: 'Thumbnail URL, about 300 px wide. For a track, its album cover.',
+  type: 'string',
+  format: 'uri',
+};
+
+/** The recorded output schema with `image` added to the four slim entities, where they appear. */
+function withImages(schema: unknown): unknown {
+  if (Array.isArray(schema)) return schema.map(withImages);
+  if (!schema || typeof schema !== 'object') return schema;
+  const node = Object.fromEntries(
+    Object.entries(schema as Schema).map(([key, value]) => [key, withImages(value)]),
+  ) as Schema;
+  const properties = node.properties as Record<string, Schema> | undefined;
+  const entity = properties?.type?.const;
+  if (properties && ['track', 'album', 'artist', 'playlist'].includes(String(entity))) {
+    return { ...node, properties: { ...properties, image: IMAGE } };
+  }
+  return node;
+}
+
 for (const era of ['modern', 'legacy'] as const) {
   describe(`${era} contract`, () => {
     const recorded = before[era];
@@ -72,7 +94,7 @@ for (const era of ['modern', 'legacy'] as const) {
         expect(tool.annotations).toEqual(old.annotations as typeof tool.annotations);
         expect(tool.description).toBe(old.description as string);
         expect(tool.outputSchema).toEqual(
-          newNullableSpelling(old.outputSchema) as typeof tool.outputSchema,
+          newNullableSpelling(withImages(old.outputSchema)) as typeof tool.outputSchema,
         );
         expect(tool.title).toBe(TITLES[tool.name] as string);
         expect(Object.keys(tool).sort()).toEqual([...Object.keys(old), 'title'].sort());
@@ -86,10 +108,21 @@ for (const era of ['modern', 'legacy'] as const) {
         .filter(
           (tool, index) =>
             JSON.stringify(tool.outputSchema) !==
-            JSON.stringify((recordedTools[index] as Record<string, unknown>).outputSchema),
+            JSON.stringify(
+              withImages((recordedTools[index] as Record<string, unknown>).outputSchema),
+            ),
         )
         .map((tool) => tool.name);
       expect(changed).toEqual(['player_status']);
+    });
+
+    test('image is added to search results and to the tracks of player_status only', async () => {
+      const client = await connect({ era });
+      const { tools } = await client.listTools();
+      const withImage = tools
+        .filter((tool) => JSON.stringify(tool.outputSchema).includes('"image"'))
+        .map((tool) => tool.name);
+      expect(withImage).toEqual(['player_status', 'search_catalog']);
     });
 
     test('identity and instructions as before; version, icon and capabilities as listed', async () => {
@@ -101,7 +134,7 @@ for (const era of ['modern', 'legacy'] as const) {
         title,
         description,
         // Changed: the version, and an icon served from the public origin.
-        version: '1.1.0',
+        version: '1.2.0',
         icons: [
           { src: new URL('/icon.svg', PUBLIC_URL).href, mimeType: 'image/svg+xml', sizes: ['any'] },
         ],

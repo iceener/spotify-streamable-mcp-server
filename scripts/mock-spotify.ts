@@ -8,6 +8,7 @@ import type { AddressInfo } from 'node:net';
  */
 export const SPOTIFY_HOSTS = ['accounts.spotify.com', 'api.spotify.com'];
 export const MOCK_DEVICE = 'smoke-device';
+export const MOCK_COVER = 'https://i.scdn.co/image/smoke-300';
 const SCOPES =
   'playlist-read-private playlist-read-collaborative playlist-modify-public playlist-modify-private user-read-playback-state user-modify-playback-state user-read-currently-playing user-library-read user-library-modify';
 
@@ -63,8 +64,16 @@ export async function startMockSpotify(
       url.pathname === '/v1/search' &&
       request.headers.authorization === 'Bearer spotify-app'
     ) {
+      const images = [640, 300, 64].map((size) => ({
+        url: MOCK_COVER.replace('300', String(size)),
+        width: size,
+        height: size,
+      }));
       return send(200, {
-        tracks: { total: 1, items: [{ id: 't1', uri: 'spotify:track:t1', name: 'Smoke Song' }] },
+        tracks: {
+          total: 1,
+          items: [{ id: 't1', uri: 'spotify:track:t1', name: 'Smoke Song', album: { images } }],
+        },
       });
     }
     send(request.headers.authorization ? 404 : 401, { error: 'not_found' });

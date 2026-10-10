@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { createSpotifyClients, errorCodeOf, spotifyCall } from '../../src/services/spotify';
 import { searchCatalog } from '../../src/services/spotify-catalog';
+import { thumbnailUrl } from '../../src/services/spotify-codecs';
 import * as player from '../../src/services/spotify-player';
 import { fakeFetch } from '../helpers';
 
@@ -126,5 +127,35 @@ describe('Spotify Web API clients', () => {
       globalThis.fetch = original;
     }
     expect(receiver).toBeUndefined();
+  });
+});
+
+describe('thumbnailUrl', () => {
+  const image = (width: number | null) => ({
+    url: `https://i.scdn.co/${width}`,
+    width,
+    height: width,
+  });
+
+  test('the smallest image at least 300 px wide, in any order', () => {
+    // An album cover, and an artist picture.
+    expect(thumbnailUrl([image(640), image(300), image(64)])).toBe('https://i.scdn.co/300');
+    expect(thumbnailUrl([image(160), image(640), image(320)])).toBe('https://i.scdn.co/320');
+  });
+
+  test('else the widest; the first when Spotify gives no widths', () => {
+    expect(thumbnailUrl([image(64), image(160)])).toBe('https://i.scdn.co/160');
+    const unsized = [
+      { url: 'https://image-cdn-ak.spotifycdn.com/first', width: null, height: null },
+      { url: 'https://image-cdn-ak.spotifycdn.com/second' },
+    ];
+    expect(thumbnailUrl(unsized)).toBe('https://image-cdn-ak.spotifycdn.com/first');
+  });
+
+  test('nothing without an image URL', () => {
+    expect(thumbnailUrl(undefined)).toBeUndefined();
+    expect(thumbnailUrl(null)).toBeUndefined();
+    expect(thumbnailUrl([])).toBeUndefined();
+    expect(thumbnailUrl([{ width: 640, height: 640 }])).toBeUndefined();
   });
 });
