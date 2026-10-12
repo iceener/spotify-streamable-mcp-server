@@ -73,6 +73,53 @@ function nameList(names: string[]): string {
   return names.length ? `: ${names.slice(0, 5).join(', ')}${names.length > 5 ? ', …' : ''}` : '.';
 }
 
+/** The playlist's track total, or `undefined` if it can't be read. */
+async function playlistTotal(client: SpotifyApi, playlistId: string): Promise<number | undefined> {
+  try {
+    const playlist = PlaylistDetailsResponseCodec.parse(
+      await call(client, 'GET', `playlists/${playlistId}`),
+    );
+    const total = Number(playlist.tracks?.total ?? Number.NaN);
+    return Number.isFinite(total) ? total : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * URIs currently present in the playlist, paged with slim fields. Stops early once
+ * every URI in `interested` has been located, so verification cost scales with the
+ * requested tracks' positions, not with the playlist size.
+ */
+async function presentUris(
+  client: SpotifyApi,
+  playlistId: string,
+  interested?: Set<string>,
+): Promise<Set<string>> {
+  const present = new Set<string>();
+  let offset = 0;
+  for (;;) {
+    const params = new URLSearchParams({
+      limit: '50',
+      offset: String(offset),
+      fields: 'items(track(uri)),total',
+    });
+    const page = PlaylistTracksResponseCodec.parse(
+      await call(client, 'GET', endpoint(`playlists/${playlistId}/tracks`, params)),
+    );
+    const items = Array.isArray(page.items) ? page.items : [];
+    for (const item of items) {
+      const uri = (item.track as { uri?: string } | null | undefined)?.uri;
+      if (uri) present.add(uri);
+    }
+    offset += items.length;
+    const total = Number(page.total ?? 0) || 0;
+    if (items.length === 0 || (total > 0 && offset >= total)) break;
+    if (interested && [...interested].every((uri) => present.has(uri))) break;
+  }
+  return present;
+}
+
 export const spotifyPlaylist = defineTool(
   'spotify_playlist',
   {
@@ -236,37 +283,125 @@ async function run(client: SpotifyApi, args: SpotifyPlaylistInput) {
     case 'add_items': {
       if (!args.playlist_id) return required('playlist_id is');
       if (!args.uris || args.uris.length === 0) return required('uris are');
+      // Capture the pre-add total so an under-applied add is visible.
+      const totalBefore = await playlistTotal(client, args.playlist_id);
       const snapshot = SnapshotResponseCodec.parse(
         await call(client, 'POST', `playlists/${args.playlist_id}/tracks`, { uris: args.uris }),
       );
       const name = await playlistName(client, args.playlist_id);
       const names = await trackNames(client, args.uris);
+      const totalAfter = await playlistTotal(client, args.playlist_id);
       const count = args.uris.length;
+      const grown =
+        totalBefore !== undefined && totalAfter !== undefined ? totalAfter - totalBefore : null;
+      const underAdd = grown !== null ? count - grown : 0;
+      const caveat =
+        underAdd > 0 && grown !== null
+          ? ` (warning: playlist total only grew by ${grown}, ${underAdd} missing — verify)`
+          : '';
       return ok(
         args.action,
-        { snapshot_id: snapshot?.snapshot_id, uris: args.uris },
-        `I've added ${count} ${count === 1 ? 'item' : 'items'} to ${name ? `'${name}'` : `playlist ${args.playlist_id}`}${nameList(names)}`,
+        {
+          snapshot_id: snapshot?.snapshot_id,
+          uris: args.uris,
+          total_before: totalBefore ?? null,
+          total_after: totalAfter ?? null,
+        },
+        `I've added ${count} ${count === 1 ? 'item' : 'items'} to ${name ? `'${name}'` : `playlist ${args.playlist_id}`}${nameList(names)}${caveat}`,
       );
     }
     case 'remove_items': {
       if (!args.playlist_id) return required('playlist_id is');
       if (!args.tracks || args.tracks.length === 0) return required('tracks are');
+      // Spotify's positions parameter is unusable on this endpoint: with a
+      // snapshot_id it silently removes nothing, without one it silently
+      // removes every occurrence of the URI (both return 200; verified
+      // empirically 2026-10-12). Refuse rather than pretend.
+      if (args.tracks.some((track) => track.positions?.length)) {
+        return fail(
+          'position-scoped removal is not supported: Spotify ignores positions (no-op with snapshot_id, remove-all-occurrences without). Send { uri } only; use reorder_items to rearrange.',
+          'unsupported_operation',
+          args.action,
+        );
+      }
+      // Spotify can partially apply a delete and still return 200
+      // (observed 2026-10-12: 63 of 68 URIs removed, 5 silently kept),
+      // and it silently ignores URIs that were never in the playlist.
+      // Snapshot before and after so the result reports what actually
+      // happened: removed / still-present / not-found.
+      const requested = [...new Set(args.tracks.map((track) => track.uri))];
+      const requestedSet = new Set(requested);
+      let presentBefore: Set<string> | null = null;
+      try {
+        presentBefore = await presentUris(client, args.playlist_id, requestedSet);
+      } catch {
+        /* advisory; must not block removal */
+      }
       const snapshot = SnapshotResponseCodec.parse(
         await call(client, 'DELETE', `playlists/${args.playlist_id}/tracks`, {
           tracks: args.tracks,
           snapshot_id: args.snapshot_id,
         }),
       );
-      const name = await playlistName(client, args.playlist_id);
+      let snapshotId = snapshot?.snapshot_id;
+      let survivors: string[] = [];
+      let verified = true;
+      try {
+        let present = await presentUris(client, args.playlist_id, requestedSet);
+        const scope = presentBefore ? requested.filter((uri) => presentBefore.has(uri)) : requested;
+        survivors = scope.filter((uri) => present.has(uri));
+        if (survivors.length > 0) {
+          try {
+            const retry = SnapshotResponseCodec.safeParse(
+              await call(client, 'DELETE', `playlists/${args.playlist_id}/tracks`, {
+                tracks: survivors.map((uri) => ({ uri })),
+              }),
+            );
+            if (retry.success && retry.data?.snapshot_id) snapshotId = retry.data.snapshot_id;
+          } catch {
+            /* a failed retry must not abort verification */
+          }
+          present = await presentUris(client, args.playlist_id, new Set(survivors));
+          survivors = scope.filter((uri) => present.has(uri));
+        }
+      } catch {
+        verified = false;
+      }
+      const notFound = presentBefore ? requested.filter((uri) => !presentBefore.has(uri)) : [];
+      const survivorSet = new Set(survivors);
+      const removed =
+        verified && presentBefore
+          ? requested.filter((uri) => presentBefore.has(uri) && !survivorSet.has(uri))
+          : requested.filter((uri) => !survivorSet.has(uri));
+      const removedSet = new Set(removed);
       const names = await trackNames(
         client,
-        args.tracks.map((track) => track.uri),
+        args.tracks.filter((track) => removedSet.has(track.uri)).map((track) => track.uri),
       );
-      const count = args.tracks.length;
+      const count = removed.length;
+      const name = await playlistName(client, args.playlist_id);
+      const label = name ? `'${name}'` : `playlist ${args.playlist_id}`;
+      const notes: string[] = [];
+      if (survivors.length > 0) {
+        notes.push(`${survivors.length} still present${verified ? ' after retry' : ''}`);
+      }
+      if (notFound.length > 0) notes.push(`${notFound.length} not found in playlist`);
+      if (!verified) notes.push('result unverified');
+      const partial = notes.length > 0 ? ` (${notes.join(', ')})` : '';
+      const message = verified
+        ? `I've removed ${count} ${count === 1 ? 'item' : 'items'} from ${label}${nameList(names)}${partial}`
+        : // No verified count to report — never claim one.
+          `Removal requested for ${args.tracks.length} items from ${label} — result unverified, playlist could not be re-read`;
       return ok(
         args.action,
-        { snapshot_id: snapshot?.snapshot_id },
-        `I've removed ${count} ${count === 1 ? 'item' : 'items'} from ${name ? `'${name}'` : `playlist ${args.playlist_id}`}${nameList(names)}`,
+        {
+          snapshot_id: snapshotId,
+          removed: verified ? count : null,
+          remaining: verified ? survivors : null,
+          not_found: presentBefore ? notFound : null,
+          verified,
+        },
+        message,
       );
     }
     case 'reorder_items': {

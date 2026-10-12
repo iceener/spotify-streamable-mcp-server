@@ -56,6 +56,46 @@ const IMAGE = {
   format: 'uri',
 };
 
+/**
+ * Changed by this PR: spotify_playlist caps uris/tracks at 100, tracks gains an optional
+ * positions entry (accepted by the schema, refused at run time), and the uris/tracks
+ * descriptions spell out the caps and the positions refusal.
+ */
+const PLAYLIST_INPUT_CHANGES: Record<string, unknown> = {
+  uris: {
+    description: 'Track URIs to add (add_items, max 100 per call).',
+    maxItems: 100,
+    type: 'array',
+    items: { type: 'string' },
+  },
+  tracks: {
+    description:
+      'Tracks to remove by URI: [{ uri }] (remove_items, max 100 per call; removes all occurrences of each URI). Requests carrying positions are rejected: Spotify ignores or over-applies the parameter.',
+    maxItems: 100,
+    type: 'array',
+    items: {
+      type: 'object',
+      properties: {
+        uri: { type: 'string' },
+        positions: {
+          type: 'array',
+          items: { type: 'integer', minimum: 0, maximum: 9007199254740991 },
+        },
+      },
+      required: ['uri'],
+    },
+  },
+};
+
+/** The recorded playlist input schema with the uris/tracks changes above applied. */
+function withPlaylistInputChanges(schema: unknown): unknown {
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return schema;
+  const node = schema as Schema;
+  const properties = node.properties as Record<string, Schema> | undefined;
+  if (!properties?.tracks) return schema;
+  return { ...node, properties: { ...properties, ...PLAYLIST_INPUT_CHANGES } };
+}
+
 /** The recorded output schema with `image` added to the four slim entities, where they appear. */
 function withImages(schema: unknown): unknown {
   if (Array.isArray(schema)) return schema.map(withImages);
@@ -90,7 +130,9 @@ for (const era of ['modern', 'legacy'] as const) {
       );
       for (const [index, tool] of tools.entries()) {
         const old = recordedTools[index] as Record<string, unknown>;
-        expect(tool.inputSchema).toEqual(old.inputSchema as typeof tool.inputSchema);
+        expect(tool.inputSchema).toEqual(
+          withPlaylistInputChanges(old.inputSchema) as typeof tool.inputSchema,
+        );
         expect(tool.annotations).toEqual(old.annotations as typeof tool.annotations);
         expect(tool.description).toBe(old.description as string);
         expect(tool.outputSchema).toEqual(
