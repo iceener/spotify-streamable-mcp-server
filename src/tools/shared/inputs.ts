@@ -242,11 +242,23 @@ export const SpotifyPlaylistInputSchema = z.object({
     .boolean()
     .optional()
     .describe('Whether the playlist is collaborative (create/update_details).'),
-  uris: z.array(z.string()).optional().describe('Track URIs to add (add_items).'),
-  tracks: z
-    .array(z.object({ uri: z.string() }))
+  uris: z
+    .array(z.string())
+    .max(100)
     .optional()
-    .describe('Tracks to remove by URI: [{ uri }] (remove_items).'),
+    .describe('Track URIs to add (add_items, max 100 per call).'),
+  tracks: z
+    .array(
+      z.object({
+        uri: z.string(),
+        positions: z.array(z.number().int().nonnegative()).optional(),
+      }),
+    )
+    .max(100)
+    .optional()
+    .describe(
+      'Tracks to remove by URI: [{ uri }] (remove_items, max 100 per call; removes all occurrences of each URI). Requests carrying positions are rejected: Spotify ignores or over-applies the parameter.',
+    ),
   range_start: z
     .number()
     .int()

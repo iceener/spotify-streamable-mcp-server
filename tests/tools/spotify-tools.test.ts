@@ -495,3 +495,149 @@ describe('spotify_playlist and spotify_library', () => {
     ).toBe(true);
   });
 });
+
+/** A Spotify that answers a playlist's tracks route from mutable state. */
+function removalApi(state: { tracks: string[]; deletes: string[][] }): FetchRoute {
+  return async (request) => {
+    const url = new URL(request.url);
+    if (url.origin !== 'https://api.spotify.com') return undefined;
+    switch (`${request.method} ${url.pathname}`) {
+      case 'GET /v1/playlists/p1/tracks': {
+        const items = state.tracks.map((id) => ({
+          track: { ...track1, id, uri: `spotify:track:${id}` },
+        }));
+        return Response.json({ items, offset: 0, total: items.length, limit: 50 });
+      }
+      case 'GET /v1/playlists/p1':
+        return Response.json({
+          id: 'p1',
+          name: 'Mix',
+          uri: 'spotify:playlist:p1',
+          tracks: { total: state.tracks.length },
+        });
+      case 'POST /v1/playlists/p1/tracks': {
+        const body = (await request.json()) as { uris: string[] };
+        for (const uri of body.uris) state.tracks.push(uri.replace('spotify:track:', ''));
+        return Response.json({ snapshot_id: 'snap-add' });
+      }
+      case 'DELETE /v1/playlists/p1/tracks': {
+        const body = (await request.json()) as { tracks: Array<{ uri: string }> };
+        const uris = body.tracks.map((entry) => entry.uri);
+        state.deletes.push(uris);
+        // The first delete of the test silently keeps one requested track,
+        // the way the real API did on 2026-10-12: 200, snapshot, half applied.
+        const kept = state.deletes.length === 1 ? 'spotify:track:track-1' : null;
+        for (const uri of uris) {
+          if (uri !== kept) {
+            state.tracks = state.tracks.filter((id) => `spotify:track:${id}` !== uri);
+          }
+        }
+        return Response.json({ snapshot_id: `snap-${state.deletes.length}` });
+      }
+      case 'GET /v1/tracks':
+        return Response.json({ tracks: [track1] });
+    }
+    return undefined;
+  };
+}
+
+describe('remove_items reports what actually happened', () => {
+  test('a partial delete is retried and the result is verified', async () => {
+    const state = { tracks: ['track-1', 'track-2'], deletes: [] as string[][] };
+    const { client } = await spotifyCaller(removalApi(state));
+    const result = await client.callTool({
+      name: 'spotify_playlist',
+      arguments: {
+        action: 'remove_items',
+        playlist_id: 'p1',
+        tracks: [{ uri: 'spotify:track:track-1' }, { uri: 'spotify:track:track-2' }],
+      },
+    });
+    expect(result.structuredContent).toMatchObject({
+      ok: true,
+      data: { removed: 2, remaining: [], not_found: [], verified: true },
+    });
+    expect(textOf(result)).toBe("I've removed 2 items from 'Mix': Migration Song");
+    // The survivor was sent again after the first delete kept it.
+    expect(state.deletes).toEqual([
+      ['spotify:track:track-1', 'spotify:track:track-2'],
+      ['spotify:track:track-1'],
+    ]);
+    expect(state.tracks).toEqual([]);
+  });
+
+  test('URIs that were never in the playlist are reported, not counted', async () => {
+    const state = { tracks: ['track-1'], deletes: [] as string[][] };
+    const { client } = await spotifyCaller(removalApi(state));
+    const result = await client.callTool({
+      name: 'spotify_playlist',
+      arguments: {
+        action: 'remove_items',
+        playlist_id: 'p1',
+        tracks: [{ uri: 'spotify:track:track-1' }, { uri: 'spotify:track:never-there' }],
+      },
+    });
+    expect(result.structuredContent).toMatchObject({
+      ok: true,
+      data: {
+        removed: 1,
+        remaining: [],
+        not_found: ['spotify:track:never-there'],
+        verified: true,
+      },
+    });
+    expect(textOf(result)).toBe(
+      "I've removed 1 item from 'Mix': Migration Song (1 not found in playlist)",
+    );
+  });
+
+  test('positions are refused before Spotify is called', async () => {
+    const state = { tracks: ['track-1'], deletes: [] as string[][] };
+    const { client, fetch } = await spotifyCaller(removalApi(state));
+    const result = await client.callTool({
+      name: 'spotify_playlist',
+      arguments: {
+        action: 'remove_items',
+        playlist_id: 'p1',
+        tracks: [{ uri: 'spotify:track:track-1', positions: [0] }],
+      },
+    });
+    expect(result.structuredContent).toMatchObject({
+      ok: false,
+      code: 'unsupported_operation',
+    });
+    expect(fetch.requests).toHaveLength(0);
+  });
+
+  test('add_items reports the totals and warns when the playlist grows short', async () => {
+    const state = { tracks: ['track-1'], deletes: [] as string[][] };
+    const api = removalApi(state);
+    // The append drops one of the two URIs, the way a partial delete does.
+    const shortAdd: FetchRoute = async (request) => {
+      if (
+        request.method === 'POST' &&
+        new URL(request.url).pathname === '/v1/playlists/p1/tracks'
+      ) {
+        const body = (await request.json()) as { uris: string[] };
+        const [first] = body.uris;
+        if (first) state.tracks.push(first.replace('spotify:track:', ''));
+        return Response.json({ snapshot_id: 'snap-add' });
+      }
+      return api(request);
+    };
+    const { client } = await spotifyCaller(shortAdd);
+    const result = await client.callTool({
+      name: 'spotify_playlist',
+      arguments: {
+        action: 'add_items',
+        playlist_id: 'p1',
+        uris: ['spotify:track:track-2', 'spotify:track:track-3'],
+      },
+    });
+    expect(result.structuredContent).toMatchObject({
+      ok: true,
+      data: { total_before: 1, total_after: 2 },
+    });
+    expect(textOf(result)).toContain('warning: playlist total only grew by 1, 1 missing');
+  });
+});
